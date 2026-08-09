@@ -15,6 +15,10 @@
 #include "caide_debug.h"
 
 #include <clang/AST/ASTContext.h>
+#include <clang/AST/ExprCXX.h>
+
+#include <llvm/ADT/SmallPtrSet.h>
+#include <llvm/ADT/SmallVector.h>
 #include <clang/AST/RawCommentList.h>
 #include <clang/Basic/SourceManager.h>
 
@@ -85,29 +89,58 @@ void DependenciesCollector::traverseTemplateSpecializationTypeImpl(
     }
 }
 
-bool DependenciesCollector::TraverseTemplateSpecializationTypeLoc(TemplateSpecializationTypeLoc tempSpecTypeLoc) {
+bool DependenciesCollector::TraverseTemplateSpecializationTypeLoc(TemplateSpecializationTypeLoc tempSpecTypeLoc
+#if CAIDE_CLANG_VERSION_AT_LEAST(22, 0)
+        , bool TraverseQualifier
+#endif
+        ) {
     dbg(CAIDE_FUNC);
-    RecursiveASTVisitor::TraverseTemplateSpecializationTypeLoc(tempSpecTypeLoc);
+    RecursiveASTVisitor::TraverseTemplateSpecializationTypeLoc(tempSpecTypeLoc
+#if CAIDE_CLANG_VERSION_AT_LEAST(22, 0)
+        , TraverseQualifier
+#endif
+        );
 
     traverseTemplateSpecializationTypeImpl(tempSpecTypeLoc.getTypePtr(), true);
     return true;
 }
 
 // We duplicate this for Type and TypeLoc, as not everything in clang traversal uses TypeLocs yet.
-bool DependenciesCollector::TraverseTemplateSpecializationType(TemplateSpecializationType* tempSpecType) {
+bool DependenciesCollector::TraverseTemplateSpecializationType(TemplateSpecializationType* tempSpecType
+#if CAIDE_CLANG_VERSION_AT_LEAST(22, 0)
+        , bool TraverseQualifier
+#endif
+        ) {
     dbg(CAIDE_FUNC);
-    RecursiveASTVisitor::TraverseTemplateSpecializationType(tempSpecType);
+    RecursiveASTVisitor::TraverseTemplateSpecializationType(tempSpecType
+#if CAIDE_CLANG_VERSION_AT_LEAST(22, 0)
+        , TraverseQualifier
+#endif
+        );
 
     traverseTemplateSpecializationTypeImpl(tempSpecType, false);
     return true;
 }
 
 #if CAIDE_CLANG_VERSION_AT_LEAST(10,0)
-bool DependenciesCollector::TraverseAutoType(AutoType* autoType) {
+bool DependenciesCollector::TraverseAutoType(AutoType* autoType
+#if CAIDE_CLANG_VERSION_AT_LEAST(22, 0)
+        , bool TraverseQualifier
+#endif
+        ) {
     dbg(CAIDE_FUNC);
-    RecursiveASTVisitor::TraverseAutoType(autoType);
+    RecursiveASTVisitor::TraverseAutoType(autoType
+#if CAIDE_CLANG_VERSION_AT_LEAST(22, 0)
+        , TraverseQualifier
+#endif
+        );
 
+#if CAIDE_CLANG_VERSION_AT_LEAST(22, 0)
+    // getTypeConstraintConcept() now returns TemplateDecl* (may be a ConceptDecl).
+    if (ConceptDecl* conceptDecl = dyn_cast_if_present<ConceptDecl>(autoType->getTypeConstraintConcept())) {
+#else
     if (ConceptDecl* conceptDecl = autoType->getTypeConstraintConcept()) {
+#endif
         // XXX: We might need this in stdlib for transitive dependencies, but
         // substituteTemplateArguments takes too long.
         if (sourceManager.isInMainFile(getBeginLoc(conceptDecl))) {
@@ -146,6 +179,26 @@ FunctionDecl* DependenciesCollector::getCurrentFunction(Decl* decl) const {
 
 Decl* DependenciesCollector::getParentDecl(Decl* decl) const {
     return dyn_cast_or_null<Decl>(decl->getLexicalDeclContext());
+}
+
+// A template's parameters are lexically part of it, so a kept template must keep
+// its parameters. This matters for a type-constraint such as
+// `template<binary_operation<T> Op>`: the reference to the concept is attributed
+// to the parameter (Op), and without this edge the parameter -- hence the concept
+// -- is unreachable from the template. An explicit specialization gets the concept
+// from a different path (its substituted constraints), but a template used only
+// via CTAD does not, so the concept would be wrongly removed while the constraint
+// naming it stays. Note getParentDecl(param) is the enclosing namespace, not the
+// template, which is why the link must be made from the template side.
+void DependenciesCollector::recordTemplateParameters(TemplateDecl* templateDecl) {
+    TemplateParameterList* params = templateDecl->getTemplateParameters();
+    if (!params)
+        return;
+    Decl* templated = templateDecl->getTemplatedDecl();
+    for (NamedDecl* param : *params) {
+        insertReference(templateDecl, param);
+        insertReference(templated, param);
+    }
 }
 
 // A declaration in a templated context (such as a method or a field of a class template) is present
@@ -359,6 +412,30 @@ bool DependenciesCollector::VisitCallExpr(CallExpr* callExpr) {
     return true;
 }
 
+bool DependenciesCollector::VisitOverloadExpr(OverloadExpr* overloadExpr) {
+    // A dependent reference to an unresolved name inside a template body -- e.g.
+    // `member<T>()`, represented as an UnresolvedMemberExpr, or an unqualified
+    // `f<T>()`, an UnresolvedLookupExpr -- is not handled by VisitCallExpr (it
+    // skips unresolved callees) and is never resolved through an instantiation
+    // whose enclosing `if constexpr` branch is discarded. Without an edge to the
+    // looked-up candidates, such a declaration can be pruned even though the
+    // template body still names it, yielding output that no longer compiles.
+    // Keep every candidate: over-keeping only leaves an extra declaration, while
+    // dropping one that is named breaks the output.
+    Decl* currentDecl = getCurrentDecl();
+    for (NamedDecl* decl : overloadExpr->decls()) {
+        insertReference(currentDecl, decl);
+        // A template is removed based on the used-ness of its underlying
+        // templated declaration (see OptimizerVisitor::VisitFunctionTemplateDecl),
+        // so reference that too -- otherwise keeping only the (Function)TemplateDecl
+        // would not keep the function/class body it wraps.
+        if (auto* templateDecl = dyn_cast<TemplateDecl>(decl))
+            insertReference(currentDecl, templateDecl->getTemplatedDecl());
+    }
+
+    return true;
+}
+
 bool DependenciesCollector::VisitCXXConstructExpr(CXXConstructExpr* constructorExpr) {
     insertReference(getCurrentDecl(), constructorExpr->getConstructor());
     return true;
@@ -403,6 +480,21 @@ bool DependenciesCollector::VisitCXXConstructorDecl(CXXConstructorDecl* ctorDecl
             insertReference(ctorDecl, ctorInit->getMember());
     }
 
+    return true;
+}
+
+bool DependenciesCollector::VisitCXXDeductionGuideDecl(CXXDeductionGuideDecl* guide) {
+    // A deduction guide is invoked implicitly by class template argument deduction,
+    // which produces no explicit reference to the guide. Tie each guide to the class
+    // template it deduces so a kept template keeps its guides; otherwise CTAD in the
+    // generated output ("segment_tree seg(...)") fails to compile because the guide
+    // that makes the deduction work was removed as apparently unused.
+    if (TemplateDecl* deduced = guide->getDeducedTemplate()) {
+        insertReference(deduced, guide);
+        insertReference(deduced->getTemplatedDecl(), guide);
+        if (FunctionTemplateDecl* guideTemplate = guide->getDescribedFunctionTemplate())
+            insertReference(deduced, guideTemplate);
+    }
     return true;
 }
 
@@ -455,6 +547,85 @@ bool DependenciesCollector::VisitUsingShadowDecl(UsingShadowDecl* usingShadowDec
     return true;
 }
 
+// The primary-template record of a (possibly dependent) base type, or the record
+// itself for a non-dependent base -- the definition in which to look up a member
+// named by a using-declaration.
+static CXXRecordDecl* baseTemplatePattern(QualType baseType) {
+    baseType = baseType.getCanonicalType();
+    if (const auto* tst = baseType->getAs<TemplateSpecializationType>()) {
+        if (auto* ctd = dyn_cast_or_null<ClassTemplateDecl>(tst->getTemplateName().getAsTemplateDecl()))
+            return ctd->getTemplatedDecl();
+    }
+    return baseType->getAsCXXRecordDecl();
+}
+
+// Look `name` up in `record` and, transitively, the patterns of its (possibly
+// dependent) bases, appending every match. A using-declaration may name a member
+// inherited from a grandparent base, and CXXRecordDecl::lookup only reports members
+// of the record itself, so the base hierarchy must be walked by hand.
+static void lookupInBasesTransitively(CXXRecordDecl* record, DeclarationName name,
+        llvm::SmallVectorImpl<NamedDecl*>& out, llvm::SmallPtrSetImpl<const CXXRecordDecl*>& visited) {
+    if (!record || !record->hasDefinition() || !visited.insert(record).second)
+        return;
+    for (NamedDecl* found : record->lookup(name))
+        out.push_back(found);
+    for (const CXXBaseSpecifier& base : record->bases())
+        lookupInBasesTransitively(baseTemplatePattern(base.getType()), name, out, visited);
+}
+
+// The type a using-declaration's qualifier names (the `base` in `using base::x;`),
+// or null when the qualifier is not a type. NestedNameSpecifier became a value type
+// in clang 22.
+static const clang::Type* usingQualifierType(const UnresolvedUsingValueDecl* usingDecl) {
+#if CAIDE_CLANG_VERSION_AT_LEAST(22, 0)
+    NestedNameSpecifier qualifier = usingDecl->getQualifier();
+    if (qualifier.getKind() == NestedNameSpecifier::Kind::Type)
+        return qualifier.getAsType();
+    return nullptr;
+#else
+    if (NestedNameSpecifier* qualifier = usingDecl->getQualifier())
+        return qualifier->getAsType();
+    return nullptr;
+#endif
+}
+
+// A member using-declaration in a class template (`using base::build;`) that names
+// a member of a *dependent* base is an UnresolvedUsingValueDecl: at the template
+// definition the base is dependent, so the declaration is tied to no target. The
+// optimizer keeps such using-declarations but removes base members individually, so
+// a member named only through the using-declaration (never called in a reachable
+// method of the derived class) is removed while the `using base::X;` that names it
+// stays -- and the output no longer compiles. Resolve the name against the base
+// hierarchy's patterns and make the derived class depend on the members it finds.
+bool DependenciesCollector::VisitUnresolvedUsingValueDecl(UnresolvedUsingValueDecl* usingDecl) {
+    auto* derived = dyn_cast_or_null<CXXRecordDecl>(usingDecl->getDeclContext());
+    if (!derived || !derived->hasDefinition())
+        return true;
+
+    // Keep the qualifier the using-declaration names (e.g. the `using base = ...;`
+    // alias in `using base::x;`). Nothing reachable references it when none of the
+    // pulled-in members are used, so it would otherwise be removed and the
+    // using-declaration left dangling on an undeclared name.
+    if (const Type* qualifierType = usingQualifierType(usingDecl)) {
+        if (const auto* typedefType = qualifierType->getAs<TypedefType>())
+            insertReference(derived, typedefType->getDecl());
+        insertReference(derived, qualifierType->getAsCXXRecordDecl());
+    }
+
+    DeclarationName name = usingDecl->getNameInfo().getName();
+    llvm::SmallVector<NamedDecl*, 4> found;
+    llvm::SmallPtrSet<const CXXRecordDecl*, 8> visited;
+    for (const CXXBaseSpecifier& base : derived->bases())
+        lookupInBasesTransitively(baseTemplatePattern(base.getType()), name, found, visited);
+
+    for (NamedDecl* decl : found) {
+        insertReference(derived, decl);
+        if (auto* templateDecl = dyn_cast<TemplateDecl>(decl))
+            insertReference(derived, templateDecl->getTemplatedDecl());
+    }
+    return true;
+}
+
 bool DependenciesCollector::VisitLambdaExpr(LambdaExpr* lambdaExpr) {
     insertReference(getCurrentDecl(), lambdaExpr->getCallOperator());
     return true;
@@ -474,11 +645,13 @@ bool DependenciesCollector::VisitTypeAliasTemplateDecl(TypeAliasTemplateDecl* al
     insertReference(aliasTemplateDecl, aliasTemplateDecl->getInstantiatedFromMemberTemplate());
     // Dependency on the single (pattern) TypeAlias associated with this template.
     insertReference(aliasTemplateDecl, aliasTemplateDecl->getTemplatedDecl());
+    recordTemplateParameters(aliasTemplateDecl);
     return true;
 }
 
 bool DependenciesCollector::VisitClassTemplateDecl(ClassTemplateDecl* templateDecl) {
     insertReference(templateDecl, templateDecl->getTemplatedDecl());
+    recordTemplateParameters(templateDecl);
     return true;
 }
 
@@ -579,6 +752,7 @@ bool DependenciesCollector::VisitFunctionDecl(FunctionDecl* f) {
 bool DependenciesCollector::VisitFunctionTemplateDecl(FunctionTemplateDecl* functionTemplate) {
     insertReference(functionTemplate,
             functionTemplate->getInstantiatedFromMemberTemplate());
+    recordTemplateParameters(functionTemplate);
     return true;
 }
 

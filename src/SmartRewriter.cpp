@@ -29,6 +29,12 @@ void SmartRewriter::appendToPreamble(std::string s) {
 }
 
 void SmartRewriter::removeRange(SourceLocation begin, SourceLocation end) {
+    // An invalid endpoint (e.g. a token that could not be located) cannot be
+    // applied by the Rewriter, and feeding it to the interval set's ordering
+    // (SourceManager::isBeforeInTranslationUnit) produces inconsistent
+    // comparisons that corrupt the underlying std::map. Ignore such ranges.
+    if (begin.isInvalid() || end.isInvalid())
+        return;
     removed.add(begin, end);
 }
 

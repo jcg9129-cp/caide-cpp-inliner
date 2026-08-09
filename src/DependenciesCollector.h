@@ -45,8 +45,16 @@ public:
     bool shouldWalkTypesOfTypeLocs() const;
 
     bool TraverseDecl(clang::Decl*);
-    bool TraverseTemplateSpecializationType(clang::TemplateSpecializationType*);
-    bool TraverseTemplateSpecializationTypeLoc(clang::TemplateSpecializationTypeLoc);
+    bool TraverseTemplateSpecializationType(clang::TemplateSpecializationType*
+#if CAIDE_CLANG_VERSION_AT_LEAST(22, 0)
+        , bool TraverseQualifier = true
+#endif
+        );
+    bool TraverseTemplateSpecializationTypeLoc(clang::TemplateSpecializationTypeLoc
+#if CAIDE_CLANG_VERSION_AT_LEAST(22, 0)
+        , bool TraverseQualifier = true
+#endif
+        );
 
     bool TraverseCallExpr(clang::CallExpr*);
 
@@ -54,7 +62,11 @@ public:
     bool VisitTypedefType(clang::TypedefType*);
     bool VisitTemplateSpecializationType(clang::TemplateSpecializationType*);
 #if CAIDE_CLANG_VERSION_AT_LEAST(10,0)
-    bool TraverseAutoType(clang::AutoType*);
+    bool TraverseAutoType(clang::AutoType*
+#if CAIDE_CLANG_VERSION_AT_LEAST(22, 0)
+        , bool TraverseQualifier = true
+#endif
+        );
     bool TraverseVarDecl(clang::VarDecl*);
     bool VisitAutoType(clang::AutoType*);
 #endif
@@ -64,8 +76,10 @@ public:
     bool VisitDecl(clang::Decl* decl);
     bool VisitNamedDecl(clang::NamedDecl* namedDecl);
     bool VisitCallExpr(clang::CallExpr* callExpr);
+    bool VisitOverloadExpr(clang::OverloadExpr* overloadExpr);
     bool VisitCXXConstructExpr(clang::CXXConstructExpr* constructorExpr);
     bool VisitCXXConstructorDecl(clang::CXXConstructorDecl* ctorDecl);
+    bool VisitCXXDeductionGuideDecl(clang::CXXDeductionGuideDecl* guide);
     bool VisitTemplateTypeParmDecl(clang::TemplateTypeParmDecl* paramDecl);
     bool VisitDeclRefExpr(clang::DeclRefExpr* ref);
     bool VisitValueDecl(clang::ValueDecl* valueDecl);
@@ -84,6 +98,7 @@ public:
     bool VisitCXXMethodDecl(clang::CXXMethodDecl* method);
     bool VisitCXXRecordDecl(clang::CXXRecordDecl* recordDecl);
     bool VisitUsingShadowDecl(clang::UsingShadowDecl* usingDecl);
+    bool VisitUnresolvedUsingValueDecl(clang::UnresolvedUsingValueDecl* usingDecl);
     bool VisitEnumDecl(clang::EnumDecl* enumDecl);
 #if CAIDE_CLANG_VERSION_AT_LEAST(10,0)
     bool TraverseConceptSpecializationExpr(clang::ConceptSpecializationExpr* conceptExpr);
@@ -96,6 +111,8 @@ private:
     clang::Decl* getCurrentDecl() const;
     clang::FunctionDecl* getCurrentFunction(clang::Decl* decl) const;
     clang::Decl* getParentDecl(clang::Decl* decl) const;
+
+    void recordTemplateParameters(clang::TemplateDecl* templateDecl);
 
     clang::Decl* getCorrespondingDeclInNonInstantiatedContext(clang::Decl* semanticDecl) const;
 

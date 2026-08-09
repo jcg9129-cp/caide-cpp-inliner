@@ -116,6 +116,26 @@ public:
     /// Identifiers must be fully qualified, e.g. "NamespaceName::ClassName::method".
     std::vector<std::string> identifiersToKeep;
 
+    /// \brief Whether to remove code unreachable from main (the second stage).
+    ///
+    /// When true (the default), declarations not reachable from main are removed.
+    /// When false, only the first stage runs: all source files and user headers
+    /// are combined into a single file, but nothing is removed. This is useful
+    /// when you only want a self-contained file, or to avoid any risk of the
+    /// reachability analysis removing something the output still needs.
+    ///
+    /// Default value is true.
+    bool removeUnusedCode;
+
+    /// \brief Whether to remove all comments from the output.
+    ///
+    /// When true, every // and /* */ comment is stripped from the final file.
+    /// String and raw-string literals are left untouched. This is independent of
+    /// removeUnusedCode, so it also applies when only inlining is performed.
+    ///
+    /// Default value is false.
+    bool removeComments;
+
 private:
     const std::string temporaryDirectory;
 };

@@ -55,6 +55,29 @@ static bool runTest(const string& testDirectory, const string& tempDirectory, ca
         throw std::runtime_error("No source files found in test directory");
     }
 
+    // A test may opt into exercising runtime auto-detection of compilation
+    // options (the same code path as `cmd -a`) by placing an autoDetect.txt
+    // marker file in its directory. This replaces the pre-detected options with
+    // freshly detected ones; the per-test clangOptions.txt below is still
+    // appended on top, just as `cmd -a` appends user-supplied options.
+    {
+        ifstream autoDetectMarker{pathConcat(testDirectory, "autoDetect.txt").c_str()};
+        if (autoDetectMarker)
+            inliner.autoDetectCompilationOptions();
+    }
+
+    // A test may opt into the first-stage-only mode (no removal of unreachable
+    // code, the same as `cmd -n`) with a noOptimize.txt marker, and/or comment
+    // stripping (`cmd -c`) with a stripComments.txt marker.
+    {
+        ifstream noOptimizeMarker{pathConcat(testDirectory, "noOptimize.txt").c_str()};
+        if (noOptimizeMarker)
+            inliner.removeUnusedCode = false;
+        ifstream stripCommentsMarker{pathConcat(testDirectory, "stripComments.txt").c_str()};
+        if (stripCommentsMarker)
+            inliner.removeComments = true;
+    }
+
     vector<string> additionalOptions = readNonEmptyLines(pathConcat(testDirectory, "clangOptions.txt"));
     for (string& opt : additionalOptions) {
         const static string TEST_ROOT_MARKER = "TEST_ROOT";
@@ -74,6 +97,34 @@ static bool runTest(const string& testDirectory, const string& tempDirectory, ca
     inliner.identifiersToKeep = readNonEmptyLines(pathConcat(testDirectory, "identifiersToKeep.txt"));
 
     const string outputFilePath = pathConcat(tempDirectory, "result.cpp");
+
+    // A test may assert that inlining FAILS GRACEFULLY on invalid input — i.e.
+    // reports a compilation error (throws) rather than crashing — by including
+    // an expectError.txt file. Any non-empty lines in it are substrings the
+    // error message must contain. A crash (e.g. SIGSEGV) kills this process, so
+    // ctest reports the test as failed; a clean throw passes.
+    {
+        ifstream expectErrorMarker{pathConcat(testDirectory, "expectError.txt").c_str()};
+        if (expectErrorMarker) {
+            const vector<string> requiredSubstrings =
+                readNonEmptyLines(pathConcat(testDirectory, "expectError.txt"));
+            try {
+                inliner.inlineCode(cppFiles, outputFilePath);
+            } catch (const std::exception& e) {
+                const string what = e.what();
+                for (const string& sub : requiredSubstrings) {
+                    if (what.find(sub) == string::npos) {
+                        std::cout << "Error message missing expected substring \""
+                                  << sub << "\":\n" << what << "\n";
+                        return false;
+                    }
+                }
+                return true; // failed as expected
+            }
+            std::cout << "Expected inlining to fail with a compilation error, but it succeeded\n";
+            return false;
+        }
+    }
 
     // Run
     inliner.inlineCode(cppFiles, outputFilePath);

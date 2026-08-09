@@ -10,6 +10,7 @@
 #include "detect_options.h"
 #include "inliner.h"
 #include "optimizer.h"
+#include "util.h"
 
 #include <algorithm>
 #include <iostream>
@@ -48,6 +49,8 @@ CppInliner::CppInliner(const string& temporaryDirectory_)
         "_WIN32", "_WIN64", "_M_AMD64", "__linux", "__linux__", "__APPLE__",
         "__GNUC__", "__GLIBC__", "__clang__", "_MSC_VER"}
     , maxConsequentEmptyLines{2}
+    , removeUnusedCode{true}
+    , removeComments{false}
     , temporaryDirectory{trimEndPathSeparators(temporaryDirectory_)}
 {
 }
@@ -78,14 +81,19 @@ static bool isInvalidDirective(string line) {
     return line == "#pragmaonce" || startsWith(line, "#line");
 }
 
-static void removeInvalidDirectives(const string& textInBinaryMode, const string& outputFilePath) {
+static string removeInvalidDirectives(const string& textInBinaryMode, const string& outputFilePath) {
     istringstream in{textInBinaryMode};
     ofstream out{outputFilePath, std::ios::binary};
     string line;
+    string result;
     while (std::getline(in, line)) {
-        if (!isInvalidDirective(line))
+        if (!isInvalidDirective(line)) {
             out << line << '\n';
+            result += line;
+            result += '\n';
+        }
     }
+    return result;
 }
 
 static bool isWhitespaceOnly(const string& text) {
@@ -131,11 +139,17 @@ void CppInliner::inlineCode(const vector<string>& cppFilePaths, const string& ou
 
     internal::Inliner inliner{clangCompilationOptions};
     std::string inlinedCode{inliner.doInline(concatStage)};
-    removeInvalidDirectives(inlinedCode, inlinedStage);
+    std::string code{removeInvalidDirectives(inlinedCode, inlinedStage)};
 
-    internal::Optimizer optimizer{inliner.getResultingCommandLineOptions(), macrosToKeep, identifiersToKeep};
-    std::string onlyReachableCode{optimizer.doOptimize(inlinedStage)};
-    removeEmptyLines(onlyReachableCode, maxConsequentEmptyLines, outputFilePath);
+    if (removeUnusedCode) {
+        internal::Optimizer optimizer{inliner.getResultingCommandLineOptions(), macrosToKeep, identifiersToKeep};
+        code = optimizer.doOptimize(inlinedStage);
+    }
+
+    if (removeComments)
+        code = internal::stripComments(code);
+
+    removeEmptyLines(code, maxConsequentEmptyLines, outputFilePath);
 }
 
 void CppInliner::autoDetectCompilationOptions() {

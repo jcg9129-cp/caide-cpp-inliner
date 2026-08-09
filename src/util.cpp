@@ -270,6 +270,47 @@ SourceRange getExpansionRange(SourceManager& sourceManager, const Decl* decl) {
             getExpansionEnd(sourceManager, decl));
 }
 
+std::string stripComments(const std::string& code) {
+    // A raw lexer over the buffer is enough to locate comments; it needs no
+    // SourceManager and correctly skips over string and raw-string literals, so
+    // "//" or "/*" appearing inside a literal are not mistaken for a comment.
+    LangOptions langOpts;
+    langOpts.CPlusPlus = langOpts.CPlusPlus11 = langOpts.CPlusPlus14 =
+        langOpts.CPlusPlus17 = langOpts.CPlusPlus20 = true;
+    langOpts.LineComment = true;
+
+    Lexer lexer(SourceLocation(), langOpts, code.data(), code.data(), code.data() + code.size());
+    lexer.SetCommentRetentionState(true);
+
+    std::string result;
+    result.reserve(code.size());
+    std::size_t written = 0;
+    Token token;
+    for (;;) {
+        const bool atEnd = lexer.LexFromRawLexer(token);
+        if (token.is(tok::comment)) {
+            const std::size_t end = std::size_t(lexer.getBufferLocation() - code.data());
+            const std::size_t begin = end - token.getLength();
+            result.append(code, written, begin - written);
+            // Preserve the newlines the comment spanned (so line numbers do not
+            // shift); replace a single-line comment with one space so that the
+            // tokens around it are not pasted together.
+            std::string replacement;
+            for (std::size_t i = begin; i < end; ++i)
+                if (code[i] == '\n')
+                    replacement.push_back('\n');
+            if (replacement.empty())
+                replacement = " ";
+            result += replacement;
+            written = end;
+        }
+        if (atEnd || token.is(tok::eof))
+            break;
+    }
+    result.append(code, written, code.size() - written);
+    return result;
+}
+
 }
 }
 

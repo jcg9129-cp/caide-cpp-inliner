@@ -16,7 +16,9 @@
 
 
 #include <clang/AST/ASTContext.h>
+#include <clang/AST/ParentMapContext.h>
 #include <clang/AST/RawCommentList.h>
+#include <clang/AST/StmtCXX.h>
 #include <clang/Basic/SourceManager.h>
 
 
@@ -81,6 +83,29 @@ bool OptimizerVisitor::VisitEmptyDecl(EmptyDecl* decl) {
     return true;
 }
 
+// True if `decl` (a static_assert used as a statement) is the sole substatement of
+// a control-flow statement written without braces, e.g. `if (c) static_assert(...);`.
+// Fully removing the assert there would leave the branch empty -- a syntax error --
+// so the caller keeps its terminating semicolon as a null statement instead. A
+// braced branch wraps its substatements in a CompoundStmt, so the DeclStmt is not a
+// direct child of the control-flow node and this returns false.
+static bool isBracelessBranchSubstatement(clang::Decl* decl) {
+    clang::ASTContext& ctx = decl->getASTContext();
+    for (const auto& declParent : ctx.getParents(*decl)) {
+        // A declaration used as a statement is wrapped in a DeclStmt.
+        const auto* declStmt = declParent.get<clang::DeclStmt>();
+        if (!declStmt)
+            continue;
+        for (const auto& stmtParent : ctx.getParents(*declStmt)) {
+            const clang::Stmt* parent = stmtParent.get<clang::Stmt>();
+            if (isa_and_nonnull<clang::IfStmt, clang::ForStmt, clang::WhileStmt,
+                    clang::DoStmt, clang::CXXForRangeStmt, clang::SwitchStmt>(parent))
+                return true;
+        }
+    }
+    return false;
+}
+
 bool OptimizerVisitor::VisitStaticAssertDecl(clang::StaticAssertDecl* staticAssertDecl) {
     // Remove all static asserts. This will not change semantics of a working program.
     //
@@ -91,8 +116,19 @@ bool OptimizerVisitor::VisitStaticAssertDecl(clang::StaticAssertDecl* staticAsse
     // Thoughts:
     //   * Should static asserts inside used functions be kept?
     //   * Should static asserts that only reference used declarations be kept?
-    if (sourceManager.isInMainFile(getBeginLoc(staticAssertDecl)))
+    if (!sourceManager.isInMainFile(getBeginLoc(staticAssertDecl)))
+        return true;
+
+    if (isBracelessBranchSubstatement(staticAssertDecl)) {
+        // Removing the assert and its semicolon would leave the enclosing braceless
+        // branch empty. Drop only the assertion, keeping the semicolon as a null
+        // statement so the branch stays syntactically valid.
+        removed.insert(staticAssertDecl);
+        rewriter.removeRange(getExpansionStart(sourceManager, staticAssertDecl),
+                             getExpansionEnd(sourceManager, staticAssertDecl));
+    } else {
         removeDecl(staticAssertDecl);
+    }
     return true;
 }
 

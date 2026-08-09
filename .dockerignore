@@ -1,0 +1,21 @@
+# Keep the build context small and avoid copying junk into the image.
+.git
+.gitignore
+.gitattributes
+
+# Local/CI build outputs
+build/
+**/build/
+tests/temp/
+
+# The LLVM submodule mount — unused here (we build with CAIDE_USE_SYSTEM_CLANG=ON)
+src/llvm-project/
+
+# Editor / OS cruft
+**/.DS_Store
+*.swp
+
+# Docs and CI config aren't needed inside the image
+docs/
+ci/
+.gitlab-ci.yml

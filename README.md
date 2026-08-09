@@ -112,7 +112,7 @@ Once build files are generated, build as usual (run `make`, open the VS
 solution etc.)
 
 * To use clang libraries from your system you need to first install them
-  (in Linux, search for packages clang-19 and libclang-19-dev or similar).
+  (in Linux, search for packages clang-22 and libclang-22-dev or similar).
 
 
         mkdir build
@@ -121,6 +121,155 @@ solution etc.)
 
 
 When the build is done, run `ctest` to execute the test suite.
+
+
+## Command-line utility
+
+The [command-line utility](./../../tree/master/src/cmd) `cmd` runs the inliner
+without writing any code. Everything before `--` is passed to clang as
+compilation options; everything after `--` is the tool's own options and the
+input source files:
+
+        ./cmd [clang options...] [@response-file ...] -- [options] <source files...>
+
+Options after `--`:
+
+* `-d <dir>` — temporary directory for intermediate files (default `./caide-tmp`,
+  which must already exist)
+* `-o <file>` — output file (default `./caide-tmp/result.cpp`)
+* `-k <macro>` — keep preprocessor branches guarded by `<macro>` (repeatable)
+* `-i <name>` — keep the fully-qualified declaration `<name>` even if it is
+  unreachable from `main` (repeatable)
+* `-l <n>` — collapse runs of blank lines left by removed code to at most `<n>`;
+  a negative value disables removal (default 2)
+* `-a`, `--auto-detect` — auto-detect system include paths before applying the
+  clang options (see below)
+* `-n`, `--no-optimize` — only combine the sources into a single file; do **not**
+  remove code unreachable from `main` (see below)
+* `-c`, `--strip-comments` — remove all comments from the output (see below)
+* `-h`, `--help` — print usage and exit
+
+An argument of the form `@FILE` (before `--`) reads additional clang options,
+one per line, from `FILE`. On error, `cmd` prints the message to stderr and
+exits with a non-zero status.
+
+### Inlining without removing code
+
+By default the tool runs in two stages: it first combines all sources and user
+headers into one file, then removes everything unreachable from `main`. Pass
+`-n` / `--no-optimize` to run only the first stage — you get a self-contained
+single file with **nothing removed**.
+
+This is useful when you only want a merged file, or to sidestep the dead-code
+analysis entirely: because it never deletes a declaration, it cannot
+accidentally drop something the output still needs (for example a member
+function named only in an `if constexpr` branch that is never instantiated).
+In this mode `-k`, `-i` and the reachability analysis have no effect.
+
+### Removing comments
+
+Pass `-c` / `--strip-comments` to delete every `//` and `/* … */` comment from
+the output. String and raw-string literals are left untouched, so `"http://…"`
+or `R"(/* not a comment */)"` survive. It is independent of `-n`, so
+`-n -c` produces a merged, comment-free file with no code removed.
+
+### Choosing a C++ standard
+
+The standard is whatever you pass via `-std=...` before `--` (e.g. `-std=c++17`
+or `-std=c++2c`); the tool forwards it to clang verbatim and does not restrict
+it. Two things to keep in mind:
+
+* The value must be recognized by the clang version the tool was built against,
+  and that clang must implement enough of the feature to *parse* your code.
+  Unimplemented features surface as ordinary compilation errors (on stderr, with
+  a non-zero exit) — never silently.
+* Library features (for example `<print>`) additionally require standard-library
+  headers that provide them, which depends on the installed libstdc++/libc++, not
+  on `-std`.
+
+### Match the analysis flags to your build
+
+The tool is not a text processor: it parses your program with a real C++
+front-end and deletes whatever is unreachable from `main`. That reachability
+depends on the exact preprocessor configuration it parses under, because macro
+definitions decide which code is even visible. **So the flags you pass before
+`--` (`-std`, `-D…`, `-I…`) must match the flags you later use to compile the
+result.** If they differ, the tool prunes one version of the program while you
+build a different one, and the output can reference something that was removed.
+
+For example, suppose your code contains:
+
+        #ifdef ASSERT
+            check(index < size());   // the only use of size()
+        #endif
+
+If you inline **without** `-DASSERT` but compile the result **with** `-DASSERT`,
+the tool parses the branch as absent, concludes `size()` is unused, deletes it —
+and then your build turns the branch back on and references the missing
+`size()`. Analyzing with `-DASSERT` keeps `size()`.
+
+Note that `-k` does **not** do this. `-k MACRO` only preserves `#ifdef MACRO`
+blocks in the output *text*; it does not define the macro for the analysis.
+Preserving both branches (`-k`) and choosing which branch is live for pruning
+(`-D`) are separate things:
+
+        # analysis flags (before --) mirror the g++ flags used on the result
+        ./cmd -std=c++17 -DASSERT -I./include -- -a -o result.cpp solution.cpp
+        g++ -std=c++17 -DASSERT -I./include result.cpp -o solution
+
+If you produce more than one build from the same source (say a local build with
+`-DDEBUG` and a submission build without it), inline once per configuration, each
+with flags matching that build — a single pruned file cannot be correct for two
+different macro configurations at once. Alternatively, `-n` / `--no-optimize`
+skips pruning entirely and sidesteps the whole issue.
+
+### Inlining code written for GCC
+
+The inliner always parses with clang, but it is normally pointed at GCC's
+standard library, so code written for g++ works — including the libstdc++-only
+`<bits/stdc++.h>` and compiler extensions such as `__int128` and `__builtin_*`.
+The simplest approach is `-a`, which runs `g++` to discover its include search
+paths and passes them to clang:
+
+        ./cmd -std=c++17 -- -a -o result.cpp solution.cpp
+
+To target a particular GCC version, ensure the matching `g++` (or
+`g++-<version>`) is installed; `-a` prefers `g++`. Alternatively, list the
+include directories yourself with `-isystem` before `--`. System headers are
+preserved verbatim in the output, so the single-file result still compiles with
+g++.
+
+
+## Docker
+
+A [Dockerfile](Dockerfile) is included that builds the [command-line
+utility](./../../tree/master/src/cmd) `cmd` directly from this source tree — no
+cloning required. It is a multi-stage build: the final image contains only the
+`cmd` binary and the clang/LLVM runtime it needs, not the build toolchain.
+
+Build the image from the repository root:
+
+        docker build -t caide-inliner .
+
+The clang/LLVM version is pinned through a build argument. Override it with, for
+example, `--build-arg LLVM_VERSION=21` (Clang 11 through 22 are supported).
+
+The image's entry point is `cmd`, so its arguments are passed directly. As on
+the command line, everything before `--` goes to clang, while source files and
+output options (`-o`, `-d`, ...) come after. Mount the directory holding your
+sources so the tool can read them and write the result back:
+
+        docker run --rm -v "$PWD":/data caide-inliner \
+            -std=c++17 -I /data -- -o /data/out.cpp /data/main.cpp
+
+Instead of listing `-isystem` directories yourself, you can pass `-a` (after
+`--`) to auto-detect the system include paths inside the container:
+
+        docker run --rm -v "$PWD":/data caide-inliner \
+            -std=c++17 -I /data -- -a -o /data/out.cpp /data/main.cpp
+
+Run `docker run --rm caide-inliner --help` for the full list of options,
+including `-i <name>` to keep a declaration that is otherwise unused.
 
 
 ## Documentation

@@ -38,6 +38,12 @@ std::pair<const char*, const char*> getCharRange(clang::SourceRange range, const
 
 std::unique_ptr<clang::tooling::FixedCompilationDatabase> createCompilationDatabaseFromCommandLine(const std::vector<std::string>& cmdLine);
 
+/// Remove all C++ comments (// ... and /* ... */) from a source string, leaving
+/// string and raw-string literals untouched. Newlines inside a comment are kept
+/// so that line numbers are preserved; an inline comment is replaced by a single
+/// space to avoid pasting adjacent tokens together.
+std::string stripComments(const std::string& code);
+
 std::string rangeToString(clang::SourceManager& sourceManager,
         const clang::SourceLocation& start, const clang::SourceLocation& end);
 

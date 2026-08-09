@@ -54,6 +54,21 @@ bool MergeNamespacesVisitor::TraverseDecl(Decl* decl) {
     return ret;
 }
 
+// Locate the "{" that opens a plain "namespace <name> {". Returns an invalid
+// location for a nested-namespace definition ("namespace A::B { ... }"), where the
+// token after the first name is "::" rather than "{". Such a namespace shares a
+// single closing brace between its parts (A and B), so it must not take part in a
+// merge: removing that shared brace would pull following code into the inner
+// namespace. Note the *outer* part (A) is not flagged NamespaceDecl::isNested()
+// (only B is), so this structural check is what distinguishes it.
+static SourceLocation plainOpeningBrace(NamespaceDecl* nsDecl, ASTContext& astContext) {
+    SourceLocation nameStart =
+        findTokenAfterLocation(getBeginLoc(nsDecl), astContext, tok::raw_identifier);
+    if (nameStart.isInvalid())
+        return SourceLocation();
+    return findTokenAfterLocation(nameStart, astContext, tok::l_brace);
+}
+
 bool MergeNamespacesVisitor::VisitNamespaceDecl(NamespaceDecl* nsDecl) {
     if (!sourceManager.isInMainFile(getBeginLoc(nsDecl)))
         return true;
@@ -61,18 +76,21 @@ bool MergeNamespacesVisitor::VisitNamespaceDecl(NamespaceDecl* nsDecl) {
     if (nsDecl && removed.count(nsDecl) == 0) {
         NamespaceDecl* canonicalDecl = nsDecl->getCanonicalDecl();
         if (!closedNamespaces.empty() && canonicalDecl == closedNamespaces.top()->getCanonicalDecl()) {
-            // Merge with previous namespace.
-            SourceLocation closingBraceLoc = closedNamespaces.top()->getRBraceLoc();
-            rewriter.removeRange(closingBraceLoc, closingBraceLoc);
-            closedNamespaces.pop();
-
             ASTContext& astContext = nsDecl->getASTContext();
-            SourceLocation thisNamespaceNameStart =
-                findTokenAfterLocation(getBeginLoc(nsDecl), astContext, tok::raw_identifier);
-            SourceLocation thisNamespaceOpeningBrace =
-                findTokenAfterLocation(thisNamespaceNameStart, astContext, tok::l_brace);
+            NamespaceDecl* previous = closedNamespaces.top();
 
-            rewriter.removeRange(getBeginLoc(nsDecl), thisNamespaceOpeningBrace);
+            // Merge "namespace X { ... } namespace X { ... }" by removing the first
+            // block's closing brace and the second block's "namespace X {" prefix.
+            // Only do so when BOTH blocks are plain "namespace <name> { ... }": a
+            // nested-namespace definition ("namespace A::B { ... }") shares one brace
+            // between A and B, and removing it (or failing to find the current block's
+            // brace) would corrupt the nesting or the removed-ranges set.
+            SourceLocation thisNamespaceOpeningBrace = plainOpeningBrace(nsDecl, astContext);
+            if (thisNamespaceOpeningBrace.isValid() && plainOpeningBrace(previous, astContext).isValid()) {
+                rewriter.removeRange(previous->getRBraceLoc(), previous->getRBraceLoc());
+                closedNamespaces.pop();
+                rewriter.removeRange(getBeginLoc(nsDecl), thisNamespaceOpeningBrace);
+            }
         }
     }
 

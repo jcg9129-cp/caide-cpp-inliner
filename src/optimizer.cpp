@@ -125,6 +125,14 @@ public:
     }
 
     virtual void HandleTranslationUnit(ASTContext& Ctx) override {
+        // If the translation unit failed to compile, its AST contains
+        // error-recovery nodes (invalid template arguments, null decls, ...)
+        // that the dependency analysis below is not robust against and may
+        // crash on. Skip optimization and let the tool report the compilation
+        // errors instead (doOptimize throws with the collected diagnostics).
+        if (Ctx.getDiagnostics().hasErrorOccurred())
+            return;
+
         // 0. Collect auxiliary information.
         {
             ScopedTimer t("BuildNonImplicitDeclMap");
