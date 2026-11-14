@@ -120,7 +120,32 @@ solution etc.)
         cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DCAIDE_USE_SYSTEM_CLANG=ON ../src
 
 
-When the build is done, run `ctest` to execute the test suite.
+## Running the tests
+
+From the repository root, configure a native build with a judge compiler to
+compile and run each test's output as well as checking the inliner:
+
+```sh
+cmake -S src -B build -DCMAKE_BUILD_TYPE=Release \
+    -DCAIDE_USE_SYSTEM_CLANG=ON -DCAIDE_TEST_CXX="g++ -std=c++23"
+cmake --build build --target test-tool --parallel 4
+ctest --test-dir build --output-on-failure
+```
+
+Choose an installed judge compiler in `CAIDE_TEST_CXX`; add
+`-DClang_ROOT=/path/to/llvm` if CMake cannot find your Clang installation.
+
+To build caide and run the whole suite on Linux with g++ in Docker:
+
+```sh
+ci/docker-test.sh
+```
+
+This runs `docker build --target test` and fails if any test fails. Defaults are
+LLVM 22, g++ 16, and 4 build jobs; override them with environment variables, for
+example `LLVM_VERSION=22 GXX_VERSION=16 JOBS=2 ci/docker-test.sh`.
+The `gcc-autodetect` and `gcc-bits-stdc++` tests run only on Linux and are skipped
+on macOS.
 
 
 ## Command-line utility

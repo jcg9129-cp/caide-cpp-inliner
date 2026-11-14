@@ -6,7 +6,18 @@
 # Local/CI build outputs
 build/
 **/build/
-tests/temp/
+build-*/
+**/build-*/
+cmake-build-*/
+**/cmake-build-*/
+**/CMakeFiles/
+**/CMakeCache.txt
+ccache-cache/
+caide-tmp/
+/cmd
+/test-tool
+tests/temp/*
+!tests/temp/keepme.txt
 
 # The LLVM submodule mount — unused here (we build with CAIDE_USE_SYSTEM_CLANG=ON)
 src/llvm-project/

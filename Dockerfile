@@ -13,6 +13,7 @@
 FROM arm64v8/ubuntu:26.04 AS build
 
 ARG LLVM_VERSION=22
+ARG JOBS=4
 ENV TZ=Europe/Berlin
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -39,10 +40,34 @@ RUN mkdir build && cd build \
      -DCAIDE_USE_SYSTEM_CLANG=ON \
      -DClang_ROOT="/usr/lib/llvm-${LLVM_VERSION}" \
      ../src \
-     && make -j"$(nproc)"
+     && make -j"${JOBS}"
 
 # ---------------------------------------------------------------------------
-# Stage 2: runtime — only what `cmd` needs to run.
+# Stage 2: test — run the full Linux suite with the judge compiler.
+# Build with: docker build --target test .
+# ---------------------------------------------------------------------------
+FROM build AS test
+
+ARG GXX_VERSION=16
+# Build args are scoped to a stage, so JOBS must be declared again here.
+ARG JOBS=4
+
+RUN apt-get update \
+     && apt-get install -y "g++-${GXX_VERSION}" \
+     && update-alternatives --install /usr/bin/g++ g++ "/usr/bin/g++-${GXX_VERSION}" 100 \
+     && update-alternatives --install /usr/bin/gcc gcc "/usr/bin/gcc-${GXX_VERSION}" 100 \
+     && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src/build
+
+RUN cmake -DCAIDE_TEST_CXX="g++ -std=c++23" ../src \
+     && make -j"${JOBS}" test-tool \
+     # Refresh options even if test-tool was already up to date in build.
+     && ./test-tool/test-tool ../tests/temp --prepare ./test-tool/clangOptions.txt \
+     && ctest --output-on-failure
+
+# ---------------------------------------------------------------------------
+# Stage 3: runtime — only what `cmd` needs to run.
 #
 # `cmd` links libLLVM / libclang-cpp *dynamically*, so those shared libs must be
 # present, but the ~700 MB of -dev static libs and the build tools are dropped.

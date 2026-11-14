@@ -166,6 +166,15 @@ Codex wrote it, Opus reviewed. `RemoveInactivePreprocessorBlocks` gets
 `removedNames`. Test hook `CAIDE_TESTING_FORCE_REMOVE` also force-removes
 macro definitions. Test: `repair-restores-macro`.
 
+## M12 part 1 — Linux suite in Docker (applied, not yet run, 2026-11-14)
+
+Codex wrote it, Opus reviewed (fix: `ARG JOBS` redeclared in the test stage;
+build args don't cross stages). `docker build --target test` builds caide,
+installs g++-16 as `g++`, and runs the whole suite with
+`CAIDE_TEST_CXX="g++ -std=c++23"`; `ci/docker-test.sh` wraps it. All stages
+build with `-j${JOBS}` (default 4). `.dockerignore` keeps local build output
+out of the context. README: "Running the tests".
+
 ## Pending checks for the user (run on the Mac, paste the output)
 
 Work continues without waiting for these; they're run whenever convenient.
@@ -194,3 +203,12 @@ Remove an entry once its result is recorded above.
    Expect: the count line prints `0` (no `-Wlogical-op` or `__float128` noise);
    all tests pass (this also covers M10: `repair-restores-macro`); cmd creates `/tmp/caide-m9`, warns about the fallback, and
    exits `3`.
+
+3. **M12** (commit "Run the full test suite on Linux in Docker…"): needs Colima
+   running; heavy (LLVM install + build), run when the VM is otherwise idle.
+   ```sh
+   ci/docker-test.sh 2>&1 | tail -30
+   ```
+   Expect: the last line `Linux tests passed (LLVM 22, g++ 16, JOBS=4).`; the
+   ctest summary above it with all tests passing, including `gcc-autodetect`
+   and `gcc-bits-stdc++`.
