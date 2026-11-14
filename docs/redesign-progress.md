@@ -186,14 +186,6 @@ main-file declaration: `kept|removed  <Kind> <qualified name>  <file>:<line>
 into the temp `inlined.cpp` (stage 1 doesn't keep `#line`). Zero cost without
 `--report`. test-tool marker `expectReport.txt` (6 cases).
 
-## M7 — minimum Clang/LLVM 21 (code applied, not yet built, 2026-11-14)
-
-Require Clang/LLVM 21 or newer in CMake; warn for 24 or newer (tested: 22
-and 23). Removed C++ compatibility branches for versions below 21, keeping
-the 22/23 gates and compatibility helpers. C++17 selection and tests gated
-on 14/19 are now unconditional. README records the minimum and tested versions.
-Static branch-equivalence checks cover 21, 22 and 23; no build here because
-Clang/LLVM development headers are unavailable.
 
 ## Check results 2026-11-14 (Mac, LLVM 22.1.8, fresh build)
 
