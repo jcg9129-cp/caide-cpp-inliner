@@ -14,6 +14,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <unordered_set>
 
 namespace clang {
     class LangOptions;
@@ -33,7 +34,8 @@ private:
 
 public:
     RemoveInactivePreprocessorBlocks(clang::SourceManager& sourceManager_, const clang::LangOptions& langOptions,
-           SmartRewriter& rewriter_, const std::set<std::string>& macrosToKeep_);
+           SmartRewriter& rewriter_, const std::set<std::string>& macrosToKeep_,
+           const std::unordered_set<std::string>& namesToRestore_);
     ~RemoveInactivePreprocessorBlocks();
 
     void MacroDefined(const clang::Token& MacroNameTok, const clang::MacroDirective* MD) override;
@@ -91,7 +93,10 @@ public:
                             ) override;
 
     // EndOfMainFile() is called too late; instead, we call this one manually in the consumer.
-    void Finalize();
+    // Reports removed macro definitions alongside the optimizer's removed declarations.
+    // The forced-removal set is a testing-only hook; restored names always win.
+    void Finalize(std::unordered_set<std::string>& removedNames,
+                  const std::unordered_set<std::string>& macrosToForceRemoveForTesting);
 };
 
 }

@@ -45,6 +45,7 @@ struct IfDefClause {
 };
 
 struct Macro {
+    string name;
     SourceRange definition;
     vector<SourceRange> usages;
     SourceLocation undefinition;
@@ -57,6 +58,7 @@ private:
     const LangOptions& langOptions;
     SmartRewriter& rewriter;
     const set<string>& macrosToKeep;
+    const std::unordered_set<string>& namesToRestore;
 
     vector<IfDefClause> activeClauses;
 
@@ -78,11 +80,13 @@ private:
 public:
     RemoveInactivePreprocessorBlocksImpl(
             SourceManager& sourceManager_, const LangOptions& langOptions_,
-            SmartRewriter& rewriter_, const set<string>& macrosToKeep_)
+            SmartRewriter& rewriter_, const set<string>& macrosToKeep_,
+            const std::unordered_set<string>& namesToRestore_)
         : sourceManager(sourceManager_)
         , langOptions(langOptions_)
         , rewriter(rewriter_)
         , macrosToKeep(macrosToKeep_)
+        , namesToRestore(namesToRestore_)
     {
     }
 
@@ -100,6 +104,7 @@ public:
             b = changeColumn(b, 1);
 
             Macro macro;
+            macro.name = macroName;
             macro.definition = SourceRange(b, e);
             macro.isWhitelisted = isWhitelisted;
             definedMacros[MD] = std::move(macro);
@@ -130,20 +135,28 @@ public:
     // (e.g. it could be referenced in an unused function.)
     // There is PPCallbacks::EndOfMainFile(), however it seems to be called only after
     // some required resources have been deallocated. So we call this method manually instead.
-    void Finalize() {
-        auto removeMacroIfUnused = [this](const Macro& macro) {
-            if (macro.isWhitelisted)
+    void Finalize(std::unordered_set<string>& removedNames,
+                  const std::unordered_set<string>& macrosToForceRemoveForTesting) {
+        auto removeMacroIfUnused = [this, &removedNames, &macrosToForceRemoveForTesting](const Macro& macro) {
+            const bool forceRemoveForTesting = macrosToForceRemoveForTesting.count(macro.name);
+            // Repair protects definitions only, without preserving conditional branches.
+            if (namesToRestore.count(macro.name) || (macro.isWhitelisted && !forceRemoveForTesting))
                 return;
 
-            for (const SourceRange& usageRange : macro.usages) {
-                if (!rewriter.isPartOfRangeRemoved(usageRange)) {
-                    // The usage of the macro has not been removed, so
-                    // we can't remove the definition.
-                    return;
+            // Testing only: simulate a bad removal even when the macro is used.
+            // Restored definitions have already been excluded above.
+            if (!forceRemoveForTesting) {
+                for (const SourceRange& usageRange : macro.usages) {
+                    if (!rewriter.isPartOfRangeRemoved(usageRange)) {
+                        // The usage of the macro has not been removed, so
+                        // we can't remove the definition.
+                        return;
+                    }
                 }
             }
 
             rewriter.removeRange(macro.definition);
+            removedNames.insert(macro.name);
 
             if (macro.undefinition.isValid()) {
                 SourceLocation b = changeColumn(macro.undefinition, 1);
@@ -287,8 +300,9 @@ private:
 
 RemoveInactivePreprocessorBlocks::RemoveInactivePreprocessorBlocks(
         SourceManager& sourceManager, const LangOptions& langOptions,
-        SmartRewriter& rewriter, const set<string>& macrosToKeep)
-    : impl(new RemoveInactivePreprocessorBlocksImpl(sourceManager, langOptions, rewriter, macrosToKeep))
+        SmartRewriter& rewriter, const set<string>& macrosToKeep,
+        const std::unordered_set<string>& namesToRestore)
+    : impl(new RemoveInactivePreprocessorBlocksImpl(sourceManager, langOptions, rewriter, macrosToKeep, namesToRestore))
 {
 }
 
@@ -339,8 +353,10 @@ void RemoveInactivePreprocessorBlocks::MacroExpands(
 }
 #endif
 
-void RemoveInactivePreprocessorBlocks::Finalize() {
-    impl->Finalize();
+void RemoveInactivePreprocessorBlocks::Finalize(
+        std::unordered_set<string>& removedNames,
+        const std::unordered_set<string>& macrosToForceRemoveForTesting) {
+    impl->Finalize(removedNames, macrosToForceRemoveForTesting);
 }
 
 void RemoveInactivePreprocessorBlocks::If(

@@ -174,19 +174,20 @@ public:
 #endif
         }
 
+        // Test hook only: simulate missing graph edges or incorrect macro pruning
+        // by force-removing named main-file declarations/definitions. Repair wins.
+        std::unordered_set<string> forceRemove;
+        if (const char* value = std::getenv("CAIDE_TESTING_FORCE_REMOVE")) {
+            std::istringstream names(value);
+            for (string name; std::getline(names, name, ','); )
+                if (!name.empty() && !namesToRestore.count(name))
+                    forceRemove.insert(name);
+        }
+
         // 2. Find semantic declarations that are reachable from main function in the graph.
         std::unordered_set<Decl*> used;
         {
             ScopedTimer t("BFS");
-            // Test hook only: simulate missing graph edges by refusing to visit
-            // named main-file declarations, even when reachable. Repair wins.
-            std::unordered_set<string> forceRemove;
-            if (const char* value = std::getenv("CAIDE_TESTING_FORCE_REMOVE")) {
-                std::istringstream names(value);
-                for (string name; std::getline(names, name, ','); )
-                    if (!name.empty() && !namesToRestore.count(name))
-                        forceRemove.insert(name);
-            }
             set<Decl*> queue;
             for (Decl* decl : srcInfo.declsToKeep)
                 queue.insert(decl->getCanonicalDecl());
@@ -231,7 +232,7 @@ public:
         // Finalize() method that will actually use the information collected by callbacks
         // to remove unused preprocessor code
         ScopedTimer t("Finalize+Rewrite");
-        ppCallbacks.Finalize();
+        ppCallbacks.Finalize(removedNames, forceRemove);
 
         smartRewriter->applyChanges();
 
@@ -299,7 +300,7 @@ public:
             new SmartRewriter(compiler.getSourceManager(), compiler.getLangOpts()));
         auto ppCallbacks = std::unique_ptr<RemoveInactivePreprocessorBlocks>(
             new RemoveInactivePreprocessorBlocks(compiler.getSourceManager(), compiler.getLangOpts(),
-                *smartRewriter, macrosToKeep));
+                *smartRewriter, macrosToKeep, namesToRestore));
         auto consumer = std::unique_ptr<OptimizerConsumer>(
             new OptimizerConsumer(compiler, std::move(smartRewriter), *ppCallbacks,
                 identifiersToKeep, namesToRestore, removedNames, result));

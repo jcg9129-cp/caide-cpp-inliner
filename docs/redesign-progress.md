@@ -158,6 +158,14 @@ result (no more `-Wlogical-op` on Clang); detection trial parses are silent.
 test-tool marker `expectOutcome.txt` (added to five existing cases).
 
 
+## M10 — repair restores macros (code applied, not yet built, 2026-11-14)
+
+Codex wrote it, Opus reviewed. `RemoveInactivePreprocessorBlocks` gets
+`namesToRestore` (a restored macro's `#define`/`#undef` are never removed;
+`#if` branch handling unchanged) and reports removed macro names into
+`removedNames`. Test hook `CAIDE_TESTING_FORCE_REMOVE` also force-removes
+macro definitions. Test: `repair-restores-macro`.
+
 ## Pending checks for the user (run on the Mac, paste the output)
 
 Work continues without waiting for these; they're run whenever convenient.
@@ -184,5 +192,5 @@ Remove an entry once its result is recorded above.
      -o /tmp/m9-out.cpp tests/cases/sizeof/1.cpp; echo "cmd exit=$?"
    ```
    Expect: the count line prints `0` (no `-Wlogical-op` or `__float128` noise);
-   all tests pass; cmd creates `/tmp/caide-m9`, warns about the fallback, and
+   all tests pass (this also covers M10: `repair-restores-macro`); cmd creates `/tmp/caide-m9`, warns about the fallback, and
    exits `3`.
