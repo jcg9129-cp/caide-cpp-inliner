@@ -200,7 +200,7 @@ Each one is independently useful and shippable.
 | M9 | Quick fixes: C interface appends to default `macrosToKeep`; `cmd` creates its temp dir; `--strict` / distinct exit code on fallback; quieter builds (`-Wlogical-op` only when supported, detection noise) | usability |
 | M4 | Keep/remove/restore reason report | diagnosability |
 | M10 | Restore removed `#define` macros in repair | repair gap |
-| M11 | Remove unused system `#include`s (verified, restored on failure) | output size |
+| M11 | ~~Remove unused system `#include`s~~ — deferred, see §7 item 6 | output size |
 | M12 | Linux/Docker CI with `CAIDE_TEST_CXX`; real-code corpus (atl + solutions) | test gap |
 | M5 | Unit-based editing engine | P5 |
 | M6 | Finer semantic checks, one at a time (§4.5) | silent miscompiles |
@@ -208,7 +208,7 @@ Each one is independently useful and shippable.
 | — | Measure speed before optimizing it (verification doubles parsing; repair reruns the optimizer) | — |
 | — | macOS: option detection with Homebrew GCC (`__float128`) | only for native macOS use |
 
-Order after M3 (decided 2026-11-14): M8, then M9.
+Order after M3 (decided 2026-11-14): M8, M9, M10, M12, M4. M11 deferred (§7 item 6).
 
 ## 7. Decisions
 
@@ -242,6 +242,19 @@ Decided 2026-11-14:
    - If the command can't be run (not found, timeout), say so on stderr and
      emit the unoptimized flattened file. The output is never left unchecked
      without a warning.
+
+6. **M11, removing unused system `#include`s: deferred** (2026-11-14; the user
+   left the call to Claude). Removing an include can change behaviour and
+   still compile: without `<cmath>`, `abs(x)` on a `double` can resolve to C's
+   `int abs(int)` and silently truncate; a header can also supply an overload,
+   a specialization (`std::hash`, `std::formatter`) or a trait specialization
+   that a better match depends on. The compile check and repair don't see
+   that; only `--verify-run` with representative inputs would, and only for
+   the inputs given. The benefit is small: system includes cost a line each
+   and don't count against readability. If it's ever done: opt-in
+   (`--prune-includes`), allowed only together with `--verify-with` and
+   `--verify-run`, based on Clang's include-cleaner analysis rather than
+   trial removal, and verified like any other removal.
 
 ## 8. Rejected
 
