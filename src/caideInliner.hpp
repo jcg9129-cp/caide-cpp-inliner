@@ -175,6 +175,12 @@ public:
     /// Default value is empty (no runtime checks).
     std::vector<std::string> verifyInputs;
 
+    /// \brief Optional path for a plain-text declaration keep/remove report.
+    ///
+    /// Reports the final optimizer attempt, including repair or fallback reasons.
+    /// Used only when removeUnusedCode is true. Default value is empty (no report).
+    std::string reportFile;
+
 private:
     const std::string temporaryDirectory;
 };

@@ -1,0 +1,3 @@
+# caide inliner report
+kept  Var boot
+root: side-effecting global

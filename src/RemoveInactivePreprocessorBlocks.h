@@ -26,6 +26,7 @@ namespace caide {
 namespace internal {
 
 class SmartRewriter;
+class Report;
 
 class RemoveInactivePreprocessorBlocks: public clang::PPCallbacks {
 private:
@@ -96,7 +97,8 @@ public:
     // Reports removed macro definitions alongside the optimizer's removed declarations.
     // The forced-removal set is a testing-only hook; restored names always win.
     void Finalize(std::unordered_set<std::string>& removedNames,
-                  const std::unordered_set<std::string>& macrosToForceRemoveForTesting);
+                  const std::unordered_set<std::string>& macrosToForceRemoveForTesting,
+                  Report* report = nullptr);
 };
 
 }

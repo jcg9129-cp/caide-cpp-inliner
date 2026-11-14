@@ -1,0 +1,9 @@
+# caide inliner report
+optimized
+kept  Var usedVar
+removed  Var unusedVar
+kept  CXXRecord usedType
+removed  CXXRecord unusedType
+used by main (
+root: main
+# declarations: 5 kept, 2 removed

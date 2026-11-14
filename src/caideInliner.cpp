@@ -10,12 +10,14 @@
 #include "detect_options.h"
 #include "inliner.h"
 #include "optimizer.h"
+#include "Report.h"
 #include "util.h"
 #include "Verifier.h"
 
 #include <algorithm>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -56,6 +58,7 @@ CppInliner::CppInliner(const string& temporaryDirectory_)
     , verifyOutput{true}
     , verifyCommand{}
     , verifyInputs{}
+    , reportFile{}
     , temporaryDirectory{trimEndPathSeparators(temporaryDirectory_)}
 {
 }
@@ -164,6 +167,11 @@ InlineOutcome CppInliner::inlineCode(const vector<string>& cppFilePaths, const s
     string code;
     InlineOutcome outcome = removeUnusedCode ? InlineOutcome::Optimized : InlineOutcome::Unoptimized;
 
+    std::unique_ptr<internal::Report> report;
+    if (removeUnusedCode && !reportFile.empty())
+        report.reset(new internal::Report);
+    string reportOutcome;
+
     if (removeUnusedCode) {
         internal::Optimizer optimizer{inliner.getResultingCommandLineOptions(), macrosToKeep, identifiersToKeep};
         std::unordered_set<string> namesToRestore;
@@ -173,7 +181,12 @@ InlineOutcome CppInliner::inlineCode(const vector<string>& cppFilePaths, const s
             std::unordered_set<string> removedNames;
             // Every attempt starts from the same stage-1 file. Restoration is
             // through graph roots and their dependencies, never text edits.
-            code = prepareOutput(optimizer.doOptimize(inlinedStage, namesToRestore, removedNames));
+            code = prepareOutput(optimizer.doOptimize(inlinedStage, namesToRestore, removedNames, report.get()));
+            if (report) {
+                reportOutcome = round == 0 ? "optimized" :
+                    "optimized after " + std::to_string(round) + " repair round(s); restored: " +
+                    formatNames(namesToRestore);
+            }
             if (!verifyOutput)
                 break;
 
@@ -209,6 +222,8 @@ InlineOutcome CppInliner::inlineCode(const vector<string>& cppFilePaths, const s
 
             code = prepareOutput(unoptimizedCode);
             outcome = InlineOutcome::FellBack;
+            if (report)
+                reportOutcome = "fell back to unoptimized output: " + result.reason;
             if (result.judgeFailed &&
                 !internal::verifyWithJudge(code, verifyCommand, temporaryDirectory).passed) {
                 std::cerr << "caide inliner: warning: unoptimized output also fails with the "
@@ -224,6 +239,9 @@ InlineOutcome CppInliner::inlineCode(const vector<string>& cppFilePaths, const s
             if (behaviour.useUnoptimized) {
                 code = fallback;
                 outcome = InlineOutcome::FellBack;
+                if (report)
+                    reportOutcome = "fell back to unoptimized output: " +
+                        internal::runtimeFallbackReason(behaviour.warnings);
             }
         }
     } else {
@@ -232,6 +250,12 @@ InlineOutcome CppInliner::inlineCode(const vector<string>& cppFilePaths, const s
 
     ofstream out{outputFilePath, std::ios::binary};
     out << code;
+    out.close();
+    if (report) {
+        if (!out)
+            throw std::runtime_error("Cannot write output file: " + outputFilePath);
+        report->write(reportFile, reportOutcome);
+    }
     return outcome;
 }
 

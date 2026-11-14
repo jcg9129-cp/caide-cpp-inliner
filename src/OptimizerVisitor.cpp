@@ -5,6 +5,7 @@
 // option) any later version. See LICENSE.TXT for details.
 
 #include "OptimizerVisitor.h"
+#include "Report.h"
 
 #include "clang_compat.h"
 #include "clang_version.h"
@@ -32,8 +33,9 @@ namespace internal {
 
 
 OptimizerVisitor::OptimizerVisitor(SourceManager& srcManager, const std::unordered_set<Decl*>& usedDecls,
-            std::unordered_set<Decl*>& removedDecls, SmartRewriter& rewriter_)
-    : sourceManager(srcManager)
+            std::unordered_set<Decl*>& removedDecls, SmartRewriter& rewriter_, Report* report_)
+    : report(report_)
+    , sourceManager(srcManager)
     , usedDeclarations(usedDecls)
     , rewriter(rewriter_)
     , removed(removedDecls)
@@ -75,6 +77,12 @@ bool OptimizerVisitor::TraverseDecl(Decl* decl) {
     }
 
     return ret;
+}
+
+bool OptimizerVisitor::VisitDecl(Decl* decl) {
+    if (report)
+        report->consider(decl, sourceManager);
+    return true;
 }
 
 bool OptimizerVisitor::VisitEmptyDecl(EmptyDecl* decl) {

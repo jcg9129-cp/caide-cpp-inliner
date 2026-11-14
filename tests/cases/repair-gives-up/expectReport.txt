@@ -1,0 +1,5 @@
+# optimizer output was not used: fell back to unoptimized output: judge compiler exited with code 1
+# caide inliner report
+fell back to unoptimized output: judge compiler exited with code 1
+kept  Function twice
+root: restored by repair

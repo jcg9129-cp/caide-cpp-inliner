@@ -14,6 +14,8 @@
 namespace caide {
 namespace internal {
 
+class Report;
+
 // Second inliner stage: remove unused code
 class Optimizer {
 public:
@@ -29,7 +31,7 @@ public:
     // unqualified names. Reports names of removed declarations and macro definitions.
     std::string doOptimize(const std::string& cppFile,
         const std::unordered_set<std::string>& namesToRestore,
-        std::unordered_set<std::string>& removedNames);
+        std::unordered_set<std::string>& removedNames, Report* report = nullptr);
 
 private:
     std::vector<std::string> cmdLineOptions;

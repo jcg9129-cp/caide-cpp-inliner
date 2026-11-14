@@ -48,6 +48,7 @@ static void printUsage(std::ostream& os, const char* prog) {
         "                           (e.g. \"g++ -std=c++23 -O2\") after the embedded check\n"
         "  --verify-run <path>  Compare runs on an input file, or sorted .in files in a\n"
         "                       directory (no recursion; repeatable; requires --verify-with)\n"
+        "  --report <path>    Write declaration keep/remove reasons for the final optimizer run\n"
         "  --no-verify        Disable output verification and fallback\n"
         "  --strict           Exit with code 3 after writing output if verification falls back\n"
         "  -h, --help         Show this help and exit\n"
@@ -102,6 +103,7 @@ int main(int argc, const char* argv[]) {
 
     vector<string> sourceFiles;
     string tmpDirectory = "./caide-tmp";
+    string reportFile;
     string outputFile = "./caide-tmp/result.cpp";
     vector<string> clangOptions;
     vector<string> macrosToKeep;
@@ -186,6 +188,8 @@ int main(int argc, const char* argv[]) {
             verifyCommand.assign(args.begin(), args.end());
         } else if (flag == "--verify-run") {
             verifyRunPaths.emplace_back(requireArg(i, flag));
+        } else if (flag == "--report") {
+            reportFile = requireArg(i, flag);
         } else if (flag == "--no-verify") {
             verifyOutput = false;
         } else if (flag == "--strict") {
@@ -230,6 +234,7 @@ int main(int argc, const char* argv[]) {
         inliner.maxConsequentEmptyLines = maxConsecutiveEmptyLines;
         inliner.removeUnusedCode = !noOptimize;
         inliner.removeComments = stripComments;
+        inliner.reportFile = reportFile;
         inliner.verifyOutput = verifyOutput;
         inliner.verifyCommand = verifyCommand;
         const auto outcome = inliner.inlineCode(sourceFiles, outputFile);

@@ -24,8 +24,12 @@ namespace clang {
 namespace caide {
 namespace internal {
 
+class Report;
+
 // Contains dependency graph and other information shared between optimizer stages.
 struct SourceInfo {
+    Report* report = nullptr; // Optional observer; no report data when disabled.
+
     // key: Decl, value: what the key uses.
     std::map<clang::Decl*, std::set<clang::Decl*>> uses;
 

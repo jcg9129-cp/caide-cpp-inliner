@@ -5,6 +5,7 @@
 // option) any later version. See LICENSE.TXT for details.
 
 #include "RemoveInactivePreprocessorBlocks.h"
+#include "Report.h"
 #include "SmartRewriter.h"
 #include "util.h"
 
@@ -136,8 +137,8 @@ public:
     // There is PPCallbacks::EndOfMainFile(), however it seems to be called only after
     // some required resources have been deallocated. So we call this method manually instead.
     void Finalize(std::unordered_set<string>& removedNames,
-                  const std::unordered_set<string>& macrosToForceRemoveForTesting) {
-        auto removeMacroIfUnused = [this, &removedNames, &macrosToForceRemoveForTesting](const Macro& macro) {
+                  const std::unordered_set<string>& macrosToForceRemoveForTesting, Report* report) {
+        auto removeMacroIfUnused = [this, &removedNames, &macrosToForceRemoveForTesting, report](const Macro& macro) {
             const bool forceRemoveForTesting = macrosToForceRemoveForTesting.count(macro.name);
             // Repair protects definitions only, without preserving conditional branches.
             if (namesToRestore.count(macro.name) || (macro.isWhitelisted && !forceRemoveForTesting))
@@ -157,6 +158,8 @@ public:
 
             rewriter.removeRange(macro.definition);
             removedNames.insert(macro.name);
+            if (report)
+                report->addMacro(macro.name, macro.definition.getBegin(), sourceManager);
 
             if (macro.undefinition.isValid()) {
                 SourceLocation b = changeColumn(macro.undefinition, 1);
@@ -355,8 +358,8 @@ void RemoveInactivePreprocessorBlocks::MacroExpands(
 
 void RemoveInactivePreprocessorBlocks::Finalize(
         std::unordered_set<string>& removedNames,
-        const std::unordered_set<string>& macrosToForceRemoveForTesting) {
-    impl->Finalize(removedNames, macrosToForceRemoveForTesting);
+        const std::unordered_set<string>& macrosToForceRemoveForTesting, Report* report) {
+    impl->Finalize(removedNames, macrosToForceRemoveForTesting, report);
 }
 
 void RemoveInactivePreprocessorBlocks::If(

@@ -175,6 +175,17 @@ installs g++-16 as `g++`, and runs the whole suite with
 build with `-j${JOBS}` (default 4). `.dockerignore` keeps local build output
 out of the context. README: "Running the tests".
 
+## M4 — keep/remove report (code applied, not yet built, 2026-11-14)
+
+Codex wrote it, Opus reviewed. `CppInliner::reportFile`, CLI `--report <path>`
+(C interface unchanged). `src/Report.{h,cpp}`: header (outcome: optimized /
+after N repair rounds / fell back + reason; counts), then one line per
+main-file declaration: `kept|removed  <Kind> <qualified name>  <file>:<line>
+<reason>` (root kind, `used by X (file:line)` from the BFS parent,
+`unreachable`, `forced (testing hook)`), then removed macros. Locations point
+into the temp `inlined.cpp` (stage 1 doesn't keep `#line`). Zero cost without
+`--report`. test-tool marker `expectReport.txt` (6 cases).
+
 ## Pending checks for the user (run on the Mac, paste the output)
 
 Work continues without waiting for these; they're run whenever convenient.
@@ -212,3 +223,12 @@ Remove an entry once its result is recorded above.
    Expect: the last line `Linux tests passed (LLVM 22, g++ 16, JOBS=4).`; the
    ctest summary above it with all tests passing, including `gcc-autodetect`
    and `gcc-bits-stdc++`.
+
+4. **M4** (commit "Report why declarations were kept or removed…"): after check 2's build,
+   ```sh
+   (cd build && ctest --output-on-failure 2>&1 | grep -E "Failed|tests passed|report" | head -20); \
+   build/cmd/cmd -std=c++17 -- -d tests/temp --report /tmp/m4-report.txt \
+     -o /tmp/m4-out.cpp tests/cases/sizeof/1.cpp; echo "cmd exit=$?"; cat /tmp/m4-report.txt
+   ```
+   Expect: all tests pass; the report lists `usedVar`/`usedType` as kept with
+   `used by …` reasons and `unusedVar`/`unusedType` as `removed … unreachable`.

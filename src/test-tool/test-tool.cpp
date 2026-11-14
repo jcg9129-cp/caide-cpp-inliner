@@ -80,6 +80,15 @@ struct ForcedRemovalForTest {
     }
 };
 
+// Remove report output even if inlining or an assertion throws.
+struct ReportFileForTest {
+    string path;
+    ~ReportFileForTest() {
+        if (!path.empty())
+            std::remove(path.c_str());
+    }
+};
+
 // expectStderr.txt asserts diagnostic paths as well as the resulting etalon.
 struct CapturedStderrForTest {
     std::ostringstream output;
@@ -360,6 +369,14 @@ static bool runTest(const string& testDirectory, const string& tempDirectory, ca
         inliner.macrosToKeep.push_back(std::move(macro));
     inliner.identifiersToKeep = readNonEmptyLines(pathConcat(testDirectory, "identifiersToKeep.txt"));
 
+    const string reportMarker = pathConcat(testDirectory, "expectReport.txt");
+    const bool expectReport = static_cast<bool>(ifstream{reportMarker.c_str()});
+    const ReportFileForTest reportFile{expectReport ? pathConcat(tempDirectory, "report.txt") : ""};
+    if (expectReport) {
+        inliner.reportFile = reportFile.path;
+        std::remove(reportFile.path.c_str()); // A stale report must not satisfy this test.
+    }
+
     const string outputFilePath = pathConcat(tempDirectory, "result.cpp");
     const auto expectedStderr = readNonEmptyLines(pathConcat(testDirectory, "expectStderr.txt"));
     const auto inlineCode = [&]() -> caide::InlineOutcome {
@@ -408,6 +425,17 @@ static bool runTest(const string& testDirectory, const string& tempDirectory, ca
     const auto outcome = inlineCode();
 
     // Assert
+    if (expectReport) {
+        ifstream file{reportFile.path.c_str()};
+        if (!file)
+            throw std::runtime_error("Expected report file was not written");
+        std::ostringstream contents;
+        contents << file.rdbuf();
+        for (const string& expected : readNonEmptyLines(reportMarker)) {
+            if (contents.str().find(expected) == string::npos)
+                throw std::runtime_error("Report missing expected substring: " + expected);
+        }
+    }
     const auto expectedOutcome = readNonEmptyLines(pathConcat(testDirectory, "expectOutcome.txt"));
     if (!expectedOutcome.empty()) {
         const string actualOutcome = outcome == caide::InlineOutcome::Optimized ? "Optimized" :

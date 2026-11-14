@@ -5,6 +5,7 @@
 // option) any later version. See LICENSE.TXT for details.
 
 #include "DependenciesCollector.h"
+#include "Report.h"
 #include "clang_compat.h"
 #include "clang_version.h"
 #include "sema_utils.h"
@@ -370,7 +371,7 @@ bool DependenciesCollector::VisitDecl(Decl* decl) {
         StringRef needle(caideKeepComment);
         dbg(toString(sourceManager, decl) << ": " << haystack.str() << std::endl);
         if (haystack.find(needle) != StringRef::npos)
-            srcInfo.declsToKeep.insert(decl);
+            keepRoot(srcInfo, decl, RootReason::KeepComment);
     }
 
     if (ctx) {
@@ -402,17 +403,17 @@ bool DependenciesCollector::VisitNamedDecl(clang::NamedDecl* decl) {
             (isa<FunctionDecl>(decl) || isa<VarDecl>(decl)) &&
             (decl->hasAttr<ConstructorAttr>() || decl->hasAttr<DestructorAttr>() ||
              decl->hasAttr<UsedAttr>()))
-        srcInfo.declsToKeep.insert(decl);
+        keepRoot(srcInfo, decl, RootReason::Attribute);
 
     if (!sourceManager.isInMainFile(getBeginLoc(decl)))
         return true;
 
     if (identifiersToKeep.count(decl->getQualifiedNameAsString()))
-        srcInfo.declsToKeep.insert(decl);
+        keepRoot(srcInfo, decl, RootReason::Identifier);
 
     // Repair intentionally restores all overloads and all scopes by name.
     if (decl->getDeclName().isIdentifier() && namesToRestore.count(decl->getNameAsString()))
-        srcInfo.declsToKeep.insert(decl);
+        keepRoot(srcInfo, decl, RootReason::Repair);
 
     return true;
 }
@@ -617,7 +618,7 @@ bool DependenciesCollector::VisitVarDecl(VarDecl* varDecl) {
     (void)ctx;
 #endif
     if (dynamicInit || needsDestructor)
-        srcInfo.declsToKeep.insert(varDecl);
+        keepRoot(srcInfo, varDecl, RootReason::SideEffect);
     return true;
 }
 
@@ -855,7 +856,7 @@ We only use FunctionDecl's for dependency tracking.
  */
 bool DependenciesCollector::VisitFunctionDecl(FunctionDecl* f) {
     if (f->isMain())
-        srcInfo.declsToKeep.insert(f);
+        keepRoot(srcInfo, f, RootReason::Main);
 
     if (sourceManager.isInMainFile(getBeginLoc(f)) && f->isLateTemplateParsed())
         srcInfo.delayedParsedFunctions.push_back(f);

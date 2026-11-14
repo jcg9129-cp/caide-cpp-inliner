@@ -1,0 +1,5 @@
+# caide inliner report
+optimized after 1 repair round(s); restored: twice
+kept  Function twice
+root: restored by repair
+removed  Function unused

@@ -5,6 +5,7 @@
 // option) any later version. See LICENSE.TXT for details.
 
 #include "optimizer.h"
+#include "Report.h"
 #include "DependenciesCollector.h"
 #include "ErrorCollector.h"
 #include "MergeNamespacesVisitor.h"
@@ -120,7 +121,7 @@ public:
             const std::unordered_set<string>& identifiersToKeep_,
             const std::unordered_set<string>& namesToRestore_,
             std::unordered_set<string>& removedNames_,
-            string& result_)
+            string& result_, Report* report_)
         : compiler(compiler_)
         , sourceManager(compiler.getSourceManager())
         , smartRewriter(std::move(smartRewriter_))
@@ -130,6 +131,7 @@ public:
         , removedNames(removedNames_)
         , result(result_)
     {
+        srcInfo.report = report_;
     }
 
     virtual void HandleTranslationUnit(ASTContext& Ctx) override {
@@ -201,8 +203,16 @@ public:
                         named->getDeclName().isIdentifier() && forceRemove.count(named->getNameAsString()))
                         continue;
                 }
-                if (used.insert(decl).second)
-                    queue.insert(srcInfo.uses[decl].begin(), srcInfo.uses[decl].end());
+                if (used.insert(decl).second) {
+                    if (srcInfo.report) {
+                        for (Decl* dependency : srcInfo.uses[decl]) {
+                            if (queue.insert(dependency).second)
+                                srcInfo.report->recordParent(dependency, decl);
+                        }
+                    } else {
+                        queue.insert(srcInfo.uses[decl].begin(), srcInfo.uses[decl].end());
+                    }
+                }
             }
         }
 
@@ -210,9 +220,11 @@ public:
         std::unordered_set<Decl*> removedDecls;
         {
             ScopedTimer t("OptimizerVisitor");
-            OptimizerVisitor visitor(sourceManager, used, removedDecls, *smartRewriter);
+            OptimizerVisitor visitor(sourceManager, used, removedDecls, *smartRewriter, srcInfo.report);
             visitor.TraverseDecl(Ctx.getTranslationUnitDecl());
             visitor.Finalize(Ctx);
+            if (srcInfo.report)
+                srcInfo.report->finishDeclarations(sourceManager, removedDecls, forceRemove, *smartRewriter);
             for (Decl* decl : removedDecls) {
                 const auto* named = dyn_cast<NamedDecl>(decl);
                 if (named && named->getDeclName().isIdentifier())
@@ -232,7 +244,7 @@ public:
         // Finalize() method that will actually use the information collected by callbacks
         // to remove unused preprocessor code
         ScopedTimer t("Finalize+Rewrite");
-        ppCallbacks.Finalize(removedNames, forceRemove);
+        ppCallbacks.Finalize(removedNames, forceRemove, srcInfo.report);
 
         smartRewriter->applyChanges();
 
@@ -280,16 +292,18 @@ private:
     const std::unordered_set<string>& identifiersToKeep;
     const std::unordered_set<string>& namesToRestore;
     std::unordered_set<string>& removedNames;
+    Report* report;
 public:
     OptimizerFrontendAction(string& result_, const std::set<string>& macrosToKeep_,
             const std::unordered_set<string>& identifiersToKeep_,
             const std::unordered_set<string>& namesToRestore_,
-            std::unordered_set<string>& removedNames_)
+            std::unordered_set<string>& removedNames_, Report* report_)
         : result(result_)
         , macrosToKeep(macrosToKeep_)
         , identifiersToKeep(identifiersToKeep_)
         , namesToRestore(namesToRestore_)
         , removedNames(removedNames_)
+        , report(report_)
     {}
 
     virtual std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance& compiler, StringRef /*file*/) override
@@ -303,7 +317,7 @@ public:
                 *smartRewriter, macrosToKeep, namesToRestore));
         auto consumer = std::unique_ptr<OptimizerConsumer>(
             new OptimizerConsumer(compiler, std::move(smartRewriter), *ppCallbacks,
-                identifiersToKeep, namesToRestore, removedNames, result));
+                identifiersToKeep, namesToRestore, removedNames, result, report));
         compiler.getPreprocessor().addPPCallbacks(std::move(ppCallbacks));
         return consumer;
     }
@@ -316,24 +330,26 @@ private:
     const std::unordered_set<string>& identifiersToKeep;
     const std::unordered_set<string>& namesToRestore;
     std::unordered_set<string>& removedNames;
+    Report* report;
 public:
     OptimizerFrontendActionFactory(string& result_, const std::set<string>& macrosToKeep_,
             const std::unordered_set<string>& identifiersToKeep_,
             const std::unordered_set<string>& namesToRestore_,
-            std::unordered_set<string>& removedNames_)
+            std::unordered_set<string>& removedNames_, Report* report_)
         : result(result_)
         , macrosToKeep(macrosToKeep_)
         , identifiersToKeep(identifiersToKeep_)
         , namesToRestore(namesToRestore_)
         , removedNames(removedNames_)
+        , report(report_)
     {}
 #if CAIDE_CLANG_VERSION_AT_LEAST(10, 0)
     std::unique_ptr<FrontendAction> create() override {
-        return std::make_unique<OptimizerFrontendAction>(result, macrosToKeep, identifiersToKeep, namesToRestore, removedNames);
+        return std::make_unique<OptimizerFrontendAction>(result, macrosToKeep, identifiersToKeep, namesToRestore, removedNames, report);
     }
 #else
     FrontendAction* create() override {
-        return new OptimizerFrontendAction(result, macrosToKeep, identifiersToKeep, namesToRestore, removedNames);
+        return new OptimizerFrontendAction(result, macrosToKeep, identifiersToKeep, namesToRestore, removedNames, report);
     }
 #endif
 };
@@ -353,8 +369,10 @@ string Optimizer::doOptimize(const string& cppFile) {
 
 string Optimizer::doOptimize(const string& cppFile,
         const std::unordered_set<string>& namesToRestore,
-        std::unordered_set<string>& removedNames) {
+        std::unordered_set<string>& removedNames, Report* report) {
     removedNames.clear();
+    if (report)
+        *report = Report{};
     ScopedTimer t("Optimizer::doOptimize");
     std::unique_ptr<tooling::FixedCompilationDatabase> compilationDatabase(
         createCompilationDatabaseFromCommandLine(cmdLineOptions));
@@ -367,7 +385,7 @@ string Optimizer::doOptimize(const string& cppFile,
     tool.setDiagnosticConsumer(&errors);
 
     string result;
-    OptimizerFrontendActionFactory factory(result, macrosToKeep, identifiersToKeep, namesToRestore, removedNames);
+    OptimizerFrontendActionFactory factory(result, macrosToKeep, identifiersToKeep, namesToRestore, removedNames, report);
 
     ScopedTimer t2("Optimizer::tool.run");
     int ret = tool.run(&factory);

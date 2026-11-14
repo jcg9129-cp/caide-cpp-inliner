@@ -28,18 +28,20 @@ namespace internal {
 
 
 class SmartRewriter;
+class Report;
 
 
 class OptimizerVisitor: public clang::RecursiveASTVisitor<OptimizerVisitor> {
 public:
     OptimizerVisitor(clang::SourceManager& srcManager, const std::unordered_set<clang::Decl*>& usedDecls,
-            std::unordered_set<clang::Decl*>& removedDecls, SmartRewriter& rewriter_);
+            std::unordered_set<clang::Decl*>& removedDecls, SmartRewriter& rewriter_, Report* report_ = nullptr);
 
     bool shouldVisitImplicitCode() const;
     bool shouldVisitTemplateInstantiations() const;
 
     bool TraverseDecl(clang::Decl* decl);
 
+    bool VisitDecl(clang::Decl* decl);
     bool VisitEmptyDecl(clang::EmptyDecl* decl);
     bool VisitNamespaceDecl(clang::NamespaceDecl* namespaceDecl);
     bool VisitFunctionDecl(clang::FunctionDecl* functionDecl);
@@ -76,6 +78,7 @@ private:
     bool processUsingDirective(clang::Decl* canonicalDecl, clang::DeclContext* declContext);
 
 
+    Report* report;
     clang::SourceManager& sourceManager;
     const std::unordered_set<clang::Decl*>& usedDeclarations;
     SmartRewriter& rewriter;
