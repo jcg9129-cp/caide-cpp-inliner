@@ -88,7 +88,11 @@ bool testOptions(const vector<string>& compilationOptions, const string& cppFile
 
     vector<string> sources{cppFile};
     DetectOptionsFrontendActionFactory factory;
-    IgnoringDiagConsumer diagnostics;
+    // Count errors without printing them. Don't use IgnoringDiagConsumer: it
+    // doesn't count errors, and ClangTool decides success from that count, so
+    // every trial parse would look successful (e.g. Homebrew GCC's headers on
+    // macOS, which fail with __float128, would be accepted).
+    DiagnosticConsumer diagnostics;
     clang::tooling::ClangTool tool(*compilationDatabase, sources);
     tool.setDiagnosticConsumer(&diagnostics);
 #if CAIDE_CLANG_VERSION_AT_LEAST(9, 0)

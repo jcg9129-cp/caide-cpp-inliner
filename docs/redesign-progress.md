@@ -186,49 +186,34 @@ main-file declaration: `kept|removed  <Kind> <qualified name>  <file>:<line>
 into the temp `inlined.cpp` (stage 1 doesn't keep `#line`). Zero cost without
 `--report`. test-tool marker `expectReport.txt` (6 cases).
 
+## Check results 2026-11-14 (Mac, LLVM 22.1.8, fresh build)
+
+- M9: no `-Wlogical-op` / `__float128` lines (count 0); CMake now reports
+  `-Wlogical-op` unsupported. `cmd --strict --verify-with false` exits 3. ✔
+- M4: report as expected for `sizeof`. ✔
+- **M9 regression, fixed by Opus:** detection used `IgnoringDiagConsumer`,
+  which doesn't count errors, so every trial parse "succeeded" and GCC 16's
+  headers were accepted → 6 tests failed with `__float128` (stl,
+  strip-comments-all, template-partial-spec-dependent,
+  using-base-member-template, concept-constrained-ctad, concept-ctor-requires).
+  Now uses a plain `DiagnosticConsumer` (counts, prints nothing). Recheck.
+- M8 manual run failed only because the command lacked `-a` (no system
+  include paths). Recheck.
+
 ## Pending checks for the user (run on the Mac, paste the output)
 
 Work continues without waiting for these; they're run whenever convenient.
 Remove an entry once its result is recorded above.
 
-1. **M8** (commit "Runtime verification…"):
+1. **Detection fix + M8/M10/M4 suite** (commit "Fix option detection…"):
    ```sh
-   make -C build -j4 test-tool cmd && \
-   (cd build && ctest --output-on-failure 2>&1 | grep -E "Failed|tests passed|Stderr missing" | head -20) && \
-   build/cmd/cmd -std=c++17 -- -d tests/temp --verify-with "g++ -std=c++23" \
-     --verify-run tests/cases/verify-run-passes -o /tmp/m8-out.cpp tests/cases/verify-run-passes/1.cpp; \
-   echo "cmd exit=$?"; cat /tmp/m8-out.cpp
-   ```
-   Expect: 78/78 pass; cmd prints nothing on stderr; `unused()` removed.
-
-2. **M9** (commit "Quick fixes…"): reconfigure so the flag checks rerun, then test.
-   ```sh
-   rm -rf build && cmake -S src -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release \
-     -DCAIDE_USE_SYSTEM_CLANG=ON -DClang_ROOT=/opt/homebrew/opt/llvm@22 \
-     -DCAIDE_TEST_CXX="g++ -std=c++23" && \
    make -C build -j4 test-tool cmd 2>&1 | grep -cE "Wlogical-op|__float128"; \
-   (cd build && ctest --output-on-failure 2>&1 | grep -E "Failed|tests passed|Unexpected inline outcome" | head -20); \
-   rm -rf /tmp/caide-m9 && build/cmd/cmd -std=c++17 -- -d /tmp/caide-m9 --strict --verify-with false \
-     -o /tmp/m9-out.cpp tests/cases/sizeof/1.cpp; echo "cmd exit=$?"
+   (cd build && ctest --output-on-failure 2>&1 | grep -E "Failed|tests passed" | head -20); \
+   build/cmd/cmd -std=c++17 -- -a -d tests/temp --verify-with "g++ -std=c++23" \
+     --verify-run tests/cases/verify-run-passes -o /tmp/m8-out.cpp tests/cases/verify-run-passes/1.cpp; \
+   echo "m8 exit=$?"; cat /tmp/m8-out.cpp
    ```
-   Expect: the count line prints `0` (no `-Wlogical-op` or `__float128` noise);
-   all tests pass (this also covers M10: `repair-restores-macro`); cmd creates `/tmp/caide-m9`, warns about the fallback, and
-   exits `3`.
-
-3. **M12** (commit "Run the full test suite on Linux in Docker…"): needs Colima
-   running; heavy (LLVM install + build), run when the VM is otherwise idle.
-   ```sh
-   ci/docker-test.sh 2>&1 | tail -30
-   ```
-   Expect: the last line `Linux tests passed (LLVM 22, g++ 16, JOBS=4).`; the
-   ctest summary above it with all tests passing, including `gcc-autodetect`
-   and `gcc-bits-stdc++`.
-
-4. **M4** (commit "Report why declarations were kept or removed…"): after check 2's build,
-   ```sh
-   (cd build && ctest --output-on-failure 2>&1 | grep -E "Failed|tests passed|report" | head -20); \
-   build/cmd/cmd -std=c++17 -- -d tests/temp --report /tmp/m4-report.txt \
-     -o /tmp/m4-out.cpp tests/cases/sizeof/1.cpp; echo "cmd exit=$?"; cat /tmp/m4-report.txt
-   ```
-   Expect: all tests pass; the report lists `usedVar`/`usedType` as kept with
-   `used by …` reasons and `unusedVar`/`unusedType` as `removed … unreachable`.
+   Expect: `0`; 79/79 pass; `m8 exit=0`, nothing on stderr, `unused()` removed.
+2. **M12** (Docker, heavy; when the VM is idle):
+   `ci/docker-test.sh 2>&1 | tail -30` → last line
+   `Linux tests passed (LLVM 22, g++ 16, JOBS=4).`
