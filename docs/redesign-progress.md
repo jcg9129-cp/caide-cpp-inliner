@@ -61,3 +61,31 @@ matters for running caide natively on macOS with GCC.
 
 Next: M2. Codex worktrees start from HEAD, so the uncommitted work must be
 committed first.
+
+## M2 — coarse units and side-effect roots (done, not committed, 2026-11-14)
+
+Codex wrote it, Opus reviewed. Applied:
+- record → every non-static field and every user-declared special member
+  (default/copy/move ctor, copy/move assignment, destructor) in
+  `DependenciesCollector` (`VisitFieldDecl`, `VisitCXXMethodDecl`);
+- roots: non-template globals / static data members with dynamic init or a
+  non-trivial destructor (`VisitVarDecl`), and decls with
+  `constructor`/`destructor`/`used` attributes (`VisitNamedDecl`);
+- test-tool saves failing outputs to `tests/temp/actual/<test>.cpp`;
+- `unused-fields` etalon keeps all fields; new cases
+  `global-side-effect-roots`, `record-layout-special-members`.
+
+Dropped in review: keeping every *explicit* specialization of a used template
+(design §4.1 template families). Used explicit specializations are already
+reached through instantiations (see the hardening TODO's verified table), and
+five existing tests check that unused ones are removed. Design doc to be
+adjusted: a template family = primary + partial specializations + deduction
+guides.
+
+Result on the Mac (LLVM 22.1.8, judge g++-16): builds cleanly; only
+`compiler-macro-branch` fails (out of M2 scope). `field-layout-sizeof` and
+`global-side-effect-ctor` now pass. `inliner2` etalon updated: its used
+structs now keep their fields (`int a;` ×2, `T t;`), judge check passed.
+
+Open item (not in any milestone yet): keep `#if` blocks that test
+compiler-identification macros (`compiler-macro-branch`).

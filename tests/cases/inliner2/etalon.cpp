@@ -1,5 +1,6 @@
 #include <myvector>
 
+
 namespace spcppl {
 
     template <typename T>
@@ -47,14 +48,14 @@ struct Used {
 
 
 struct UsedTypedefedStruct {
-    
+    int a;
 };
 
 typedef UsedTypedefedStruct UsedTypedef;
 
 
 struct UsedTypedefedStruct2 {
-    
+    int a;
 };
 
 typedef UsedTypedefedStruct2 UsedTypedef2;
@@ -72,7 +73,7 @@ struct V {
 
 template<typename T>
 struct V2 {
-    
+    T t;
 };
 
 

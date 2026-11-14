@@ -7,6 +7,8 @@
 #include "../caideInliner.hpp"
 #include "../clang_version.h"
 
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/Path.h>
 #include <llvm/Support/Program.h>
 
 #if CAIDE_CLANG_VERSION_AT_LEAST(16, 0)
@@ -23,6 +25,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <vector>
 
 
@@ -345,6 +348,17 @@ static bool runTest(const string& testDirectory, const string& tempDirectory, ca
     if (etalonMatches && output.size() > etalon.size()) {
         std::cout << "Unexpected end of file: " << etalonFilePath << "\n";
         etalonMatches = false;
+    }
+
+    if (!etalonMatches) {
+        const string actualDirectory = pathConcat(tempDirectory, "actual");
+        const string directory = testDirectory.substr(0, testDirectory.find_last_not_of("/\\") + 1);
+        const string testName = llvm::sys::path::filename(directory).str();
+        std::error_code error = llvm::sys::fs::create_directories(actualDirectory);
+        if (!error)
+            error = llvm::sys::fs::copy_file(outputFilePath, pathConcat(actualDirectory, testName + ".cpp"));
+        if (error)
+            std::cout << "Could not save actual output: " << error.message() << '\n';
     }
 
     const bool judgeMatches = checkJudge(testDirectory, tempDirectory, cppFiles, additionalOptions);

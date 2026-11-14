@@ -15,6 +15,7 @@
 #include "caide_debug.h"
 
 #include <clang/AST/ASTContext.h>
+#include <clang/AST/Attr.h>
 #include <clang/AST/ExprCXX.h>
 
 #include <llvm/ADT/SmallPtrSet.h>
@@ -395,6 +396,12 @@ bool DependenciesCollector::VisitDecl(Decl* decl) {
 }
 
 bool DependenciesCollector::VisitNamedDecl(clang::NamedDecl* decl) {
+    if (sourceManager.isInMainFile(getExpansionStart(sourceManager, decl)) &&
+            (isa<FunctionDecl>(decl) || isa<VarDecl>(decl)) &&
+            (decl->hasAttr<ConstructorAttr>() || decl->hasAttr<DestructorAttr>() ||
+             decl->hasAttr<UsedAttr>()))
+        srcInfo.declsToKeep.insert(decl);
+
     if (!sourceManager.isInMainFile(getBeginLoc(decl)))
         return true;
 
@@ -569,6 +576,42 @@ bool DependenciesCollector::VisitValueDecl(ValueDecl* valueDecl) {
 
 bool DependenciesCollector::VisitVarDecl(VarDecl* varDecl) {
     insertReference(varDecl, varDecl->getDescribedVarTemplate());
+
+    if (!sourceManager.isInMainFile(getExpansionStart(sourceManager, varDecl)) || !varDecl->isFileVarDecl() ||
+            (varDecl->getStorageDuration() != SD_Static && varDecl->getStorageDuration() != SD_Thread) ||
+            varDecl->getDescribedVarTemplate() || isa<VarTemplateSpecializationDecl>(varDecl) ||
+            varDecl->getDeclContext()->isDependentContext() ||
+            varDecl->isThisDeclarationADefinition() == VarDecl::DeclarationOnly)
+        return true;
+
+    for (DeclContext* ctx = varDecl->getDeclContext(); ctx; ctx = ctx->getParent()) {
+        if (ctx->isFunctionOrMethod())
+            return true;
+        if (auto* record = dyn_cast<CXXRecordDecl>(ctx)) {
+            if (record->getDescribedClassTemplate() || isa<ClassTemplateSpecializationDecl>(record) ||
+                    record->getInstantiatedFromMemberClass())
+                return true;
+        }
+    }
+
+    // Initialization and destruction of non-template globals can affect the
+    // program without any reference to their names. Keep them conservatively;
+    // template variables/members are instantiated only when used, and locals
+    // are kept with their function rather than becoming independent roots.
+    ASTContext& ctx = varDecl->getASTContext();
+#if CAIDE_CLANG_VERSION_AT_LEAST(12, 0)
+    const bool dynamicInit = varDecl->hasInit() && !varDecl->hasConstantInitialization();
+#else
+    const bool dynamicInit = varDecl->hasInit() && !varDecl->checkInitIsICE();
+#endif
+#if CAIDE_CLANG_VERSION_AT_LEAST(10, 0)
+    const bool needsDestructor = varDecl->needsDestruction(ctx) == QualType::DK_cxx_destructor;
+#else
+    const bool needsDestructor = varDecl->getType().isDestructedType() == QualType::DK_cxx_destructor;
+    (void)ctx;
+#endif
+    if (dynamicInit || needsDestructor)
+        srcInfo.declsToKeep.insert(varDecl);
     return true;
 }
 
@@ -697,6 +740,9 @@ bool DependenciesCollector::VisitLambdaExpr(LambdaExpr* lambdaExpr) {
 
 bool DependenciesCollector::VisitFieldDecl(FieldDecl* field) {
     insertReference(field, field->getParent());
+    // Every non-static field contributes to layout, even unnamed bit-fields and
+    // anonymous records. Keeping the field also keeps its type and initializer.
+    insertReference(field->getParent(), field);
     return true;
 }
 
@@ -857,6 +903,16 @@ bool DependenciesCollector::VisitFunctionTemplateDecl(FunctionTemplateDecl* func
 
 bool DependenciesCollector::VisitCXXMethodDecl(CXXMethodDecl* method) {
     insertReference(method, method->getParent());
+    // User-declared special members affect traits, aggregate-ness and implicit
+    // members even when never called, including defaulted and deleted members.
+    if (!method->isImplicit()) {
+        bool specialMember = isa<CXXDestructorDecl>(method) ||
+            method->isCopyAssignmentOperator() || method->isMoveAssignmentOperator();
+        if (auto* ctor = dyn_cast<CXXConstructorDecl>(method))
+            specialMember = ctor->isDefaultConstructor() || ctor->isCopyOrMoveConstructor();
+        if (specialMember)
+            insertReference(method->getParent(), method);
+    }
     if (method->isVirtual()) {
         // Virtual methods may not be called directly. Assume that
         // if we need a class, we need all its virtual methods.

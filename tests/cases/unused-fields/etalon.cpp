@@ -1,6 +1,6 @@
 struct A {
-    int  b, c;
-    bool   g;
+    int a, b, c, d;
+    bool e, f, g;
     static long h;
 };
 

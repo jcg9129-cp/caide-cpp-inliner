@@ -426,22 +426,7 @@ bool OptimizerVisitor::VisitVarDecl(VarDecl* varDecl) {
     }
 
     variables[start].push_back(varDecl);
-    /*
-    Technically, we cannot remove global static variables because
-    their initializers may have side effects.
-    The following code marks too many expressions as having side effects
-    (e.g. it will mark an std::vector constructor as such):
-
-    VarDecl* definition = varDecl->getDefinition();
-    Expr* initExpr = definition ? definition->getInit() : nullptr;
-    if (initExpr && initExpr->HasSideEffects(varDecl->getASTContext()))
-        srcInfo.declsToKeep.insert(varDecl);
-
-    The analysis of which functions *really* have side effects seems too
-    complicated. So currently we simply remove unreferenced global static
-    variables unless they are marked with a '/// caide keep' comment.
-    */
-    if (usedDeclarations.count(varDecl) == 0) {
+    if (usedDeclarations.count(varDecl->getCanonicalDecl()) == 0) {
         // Mark this variable as removed, but the actual code deletion is done in
         // removeVariables() method.
         removed.insert(varDecl);
@@ -506,11 +491,15 @@ void OptimizerVisitor::Finalize(ASTContext& ctx) {
         const size_t n = vars.size();
         vector<bool> isUsed(n, true);
         size_t lastUsed = n;
+        bool allUsed = true;
         for (size_t i = 0; i < n; ++i) {
             isUsed[i] = usedDeclarations.count(vars[i]->getCanonicalDecl()) != 0;
+            allUsed = allUsed && isUsed[i];
             if (isUsed[i])
                 lastUsed = i;
         }
+        if (allUsed)
+            continue;
 
         SourceLocation endOfLastVar = getExpansionEnd(sourceManager, vars.back());
 

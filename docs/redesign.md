@@ -65,8 +65,9 @@ An optimizer edit removes a whole **unit**, never part of one. A unit is:
   for its layout and its special member functions. Unused ordinary member
   functions remain removable as sub-units (decided, §7);
 - a **template family**: the primary template plus all partial
-  specializations, explicit specializations and deduction guides. Today these
-  are separate edges; they become one unit;
+  specializations and deduction guides. Explicit (full) specializations stay
+  separate: used ones are reached through template instantiations, and unused
+  ones are removed (decided in M2 review);
 - an enum (already the case);
 - a whole macro invocation that produces declarations;
 - using-directives, using-declarations and namespace aliases. They are units of
