@@ -187,7 +187,7 @@ into the temp `inlined.cpp` (stage 1 doesn't keep `#line`). Zero cost without
 `--report`. test-tool marker `expectReport.txt` (6 cases).
 
 
-## M7 — minimum Clang/LLVM 21 (code applied, not yet built, 2026-11-14)
+## M7 — minimum Clang/LLVM 21 (done, 2026-11-14)
 
 Require Clang/LLVM 21 or newer in CMake; warn for 24 or newer (tested: 22
 and 23). Removed C++ compatibility branches for versions below 21, keeping
@@ -220,6 +220,11 @@ own summary line from the failing GCC-16 detection trials (printed by
 CompilerInstance when caret diagnostics are on). Fixed with M7: the trial
 parses in `testOptions` get `-fno-caret-diagnostics`.
 
+## Check results 2026-11-14, third run (Mac, LLVM 22.1.8)
+
+M7 + detection noise: builds with no errors and no "too recent" warning,
+**79/79 pass**, `cmd -a` silent (no "N errors generated."), exit 0. M7 done.
+
 ## Pending checks for the user (run on the Mac, paste the output)
 
 Work continues without waiting for these; they're run whenever convenient.
@@ -228,15 +233,3 @@ Remove an entry once its result is recorded above.
 1. **M12** (Docker, heavy; when the VM is idle):
    `ci/docker-test.sh 2>&1 | tail -30` → last line
    `Linux tests passed (LLVM 22, g++ 16, JOBS=4).`
-
-2. **M7 + detection noise** (commit "Require Clang/LLVM 21…"):
-   ```sh
-   make -C build -j4 test-tool cmd 2>&1 | grep -E "error|too recent" | head; \
-   (cd build && ctest --output-on-failure 2>&1 | grep -E "Failed|tests passed" | head -20); \
-   build/cmd/cmd -std=c++17 -- -a -d tests/temp -o /tmp/m7-out.cpp tests/cases/verify-run-passes/1.cpp; \
-   echo "m7 exit=$?"
-   ```
-   Expect: no output from the first grep (no compile errors; the "too recent"
-   CMake warning is gone, if CMake reconfigures); 79/79 pass; `cmd -a` prints
-   nothing (no "2 errors generated."), exit 0. Optionally also with LLVM 23:
-   `cmake -S src -B build23 -DCAIDE_USE_SYSTEM_CLANG=ON -DClang_ROOT=/opt/homebrew/opt/llvm && make -C build23 -j4 test-tool && (cd build23 && ctest 2>&1 | tail -3)`.
