@@ -6,7 +6,6 @@
 
 #include "util.h"
 #include "clang_compat.h"
-#include "clang_version.h"
 
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/Stmt.h>
@@ -90,19 +89,7 @@ SourceLocation findLocationAfterSemi(SourceLocation loc, ASTContext& Ctx, bool I
 }
 
 std::pair<const char*, const char*> getCharRange(SourceRange range, const SourceManager& sourceManager, const LangOptions& langOpts) {
-#if CAIDE_CLANG_VERSION_AT_LEAST(7,0)
     CharSourceRange rng = sourceManager.getExpansionRange(range);
-#else
-    range = sourceManager.getExpansionRange(range);
-    // The following is actually incorrect because range could be a token range,
-    // in which case we must use CharSourceRange::getTokenRange(). The only place
-    // where we've encountered it so far is the range of #if condition with a newer clang,
-    // which is covered by the other implementation above.
-    // So for our use cases this should work. If we actually get token ranges from
-    // older clang versions, we could copy the implementation of getExpansionRange
-    // from latest clang.
-    CharSourceRange rng = CharSourceRange::getCharRange(range);
-#endif
     rng = Lexer::makeFileCharRange(rng, sourceManager, langOpts);
     if (rng.isInvalid())
         return {nullptr, nullptr};
@@ -125,13 +112,8 @@ std::unique_ptr<tooling::FixedCompilationDatabase> createCompilationDatabaseFrom
     for (int i = 1; i < argc; ++i)
         argv[i] = cmdLine[i-1].c_str();
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(5,0)
     std::string errorMessage;
     return tooling::FixedCompilationDatabase::loadFromCommandLine(argc, &argv[0], errorMessage);
-#else
-    tooling::FixedCompilationDatabase* rawPtr = tooling::FixedCompilationDatabase::loadFromCommandLine(argc, &argv[0]);
-    return std::unique_ptr<tooling::FixedCompilationDatabase>(rawPtr);
-#endif
 }
 
 std::string rangeToString(SourceManager& sourceManager, const SourceLocation& start, const SourceLocation& end) {
@@ -160,7 +142,6 @@ std::string toString(SourceManager& sourceManager, SourceLocation loc) {
     return os.str();
 }
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(7,0)
 static void debug(SourceManager& sourceManager, std::ostringstream& os, SourceLocation loc) {
     if (!loc.isValid()) os << "[invalid]";
     else if (!loc.isFileID()) os << "[not file]";
@@ -200,13 +181,6 @@ std::string toString(SourceManager& sourceManager, SourceRange range, const Lang
     return os.str();
 }
 
-#else
-std::string toString(SourceManager& sourceManager, SourceRange range, const LangOptions*) {
-    return toString(sourceManager, range.getBegin()) + " -- " +
-        toString(sourceManager, range.getEnd());
-}
-#endif
-
 std::string toString(SourceManager& sourceManager, const Decl* decl) {
     if (!decl)
         return "<invalid>";
@@ -225,15 +199,10 @@ std::string toString(SourceManager& sourceManager, const Decl* decl) {
 std::string toString(ASTContext& ctx, const Stmt& stmt) {
     std::string res;
     llvm::raw_string_ostream os(res);
-#if CAIDE_CLANG_VERSION_AT_LEAST(11,0)
     stmt.dump(os, ctx);
-#else
-    stmt.dump(os, ctx.getSourceManager());
-#endif
     return res;
 }
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(7,0)
 static SourceLocation getBegin(const CharSourceRange& charSourceRange) {
     return charSourceRange.getBegin();
 }
@@ -241,15 +210,6 @@ static SourceLocation getBegin(const CharSourceRange& charSourceRange) {
 static SourceLocation getEnd(const CharSourceRange& charSourceRange) {
     return charSourceRange.getEnd();
 }
-#else
-static SourceLocation getBegin(const std::pair<SourceLocation, SourceLocation>& charSourceRange) {
-    return charSourceRange.first;
-}
-
-static SourceLocation getEnd(const std::pair<SourceLocation, SourceLocation>& charSourceRange) {
-    return charSourceRange.second;
-}
-#endif
 
 SourceLocation getExpansionStart(SourceManager& sourceManager, const Decl* decl) {
     SourceLocation start = getBeginLoc(decl);

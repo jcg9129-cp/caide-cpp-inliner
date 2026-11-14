@@ -43,19 +43,12 @@ if(NOT APPLE)
     add_test_directory(gcc-bits-stdc++)
 endif()
 
-if(LLVM_PACKAGE_VERSION VERSION_GREATER_EQUAL "14")
-    # Needs https://github.com/llvm/llvm-project/commit/4e4511df8d33a6fc02d5e46c681855db495187cd
-    add_test_directory(enums)
-endif()
-
-if(LLVM_PACKAGE_VERSION VERSION_GREATER_EQUAL "19")
-    # Need Sema APIs that are unavailable or too different in earlier versions.
-    add_test_directory(github-issue8)
-    add_test_directory(concepts-constraints)
-    add_test_directory(concept-constrained-ctad)
-    add_test_directory(concept-ctor-requires)
-    add_test_directory(error-undefined-concept)
-endif()
+add_test_directory(enums)
+add_test_directory(github-issue8)
+add_test_directory(concepts-constraints)
+add_test_directory(concept-constrained-ctad)
+add_test_directory(concept-ctor-requires)
+add_test_directory(error-undefined-concept)
 
 if(LLVM_PACKAGE_VERSION VERSION_GREATER_EQUAL "22")
     # C++23/C++26 language-feature coverage (-std=c++2c). Expected outputs were

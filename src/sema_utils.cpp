@@ -81,28 +81,19 @@ void substituteExprs(Sema& sema, llvm::ArrayRef<const Expr*> exprs,
     }
 }
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(16, 0)
-
 // TTemplateDecl is either TemplateDecl or ClassTemplatePartialSpecializationDecl
 template <typename TTemplateDecl>
 llvm::SmallVector<const Expr*, 4> getConstraintExprs(const TTemplateDecl* templateDecl) {
     llvm::SmallVector<const Expr*, 4> constraintExprs;
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(21, 0)
     llvm::SmallVector<AssociatedConstraint, 4> constraints;
     templateDecl->getAssociatedConstraints(constraints);
     for (const auto& ac : constraints)
         constraintExprs.push_back(ac.ConstraintExpr);
-#else
-    templateDecl->getAssociatedConstraints(constraintExprs);
-#endif
     return constraintExprs;
 }
 
-#endif
-
 // sema.DeduceTemplateArguments was exposed in commit 7415524b
-#if CAIDE_CLANG_VERSION_AT_LEAST(19, 1)
 
 llvm::SmallVector<TemplateArgument, 4> getInjectedTemplateArgs(
         ASTContext& astCtx, const TemplateParameterList& params)
@@ -213,7 +204,6 @@ void collectSugar(Sema& sema,
         getConstraintExprs(templateDecl);
     substituteExprs(sema, constraints, MLTAL, sig);
 }
-#endif
 
 }
 
@@ -225,7 +215,6 @@ SugaredSignature substituteTemplateArguments(
     ScopedTimer t1("substituteTemplateArguments");
     SugaredSignature ret;
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(19, 1)
     if (anyArgDependent(writtenArgs)) {
         return ret;
     }
@@ -283,13 +272,6 @@ SugaredSignature substituteTemplateArguments(
         }
     }
 
-#else
-    (void)sema;
-    (void)templateDecl;
-    (void)writtenArgs;
-    (void)args;
-#endif
-
     return ret;
 }
 
@@ -298,7 +280,6 @@ SugaredSignature substituteTemplateArguments(
         llvm::ArrayRef<TemplateArgument> args) {
     ScopedTimer t1("substituteTemplateArguments(ClassPartialSpec)");
     SugaredSignature ret;
-#if CAIDE_CLANG_VERSION_AT_LEAST(16, 0)
     if (anyArgDependent(args)) {
         return ret;
     }
@@ -348,12 +329,6 @@ SugaredSignature substituteTemplateArguments(
     llvm::SmallVector<const Expr*, 4> constraints =
         getConstraintExprs(templateDecl);
     substituteExprs(sema, constraints, sugaredMLTAL, ret);
-
-#else
-    (void)sema;
-    (void)templateDecl;
-    (void)args;
-#endif
 
     return ret;
 }

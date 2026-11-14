@@ -6,7 +6,6 @@
 
 #include "inliner.h"
 #include "clang_compat.h"
-#include "clang_version.h"
 #include "util.h"
 #include "Timer.h"
 
@@ -66,22 +65,12 @@ public:
                                     StringRef FileName,
                                     bool /*IsAngled*/,
                                     CharSourceRange FilenameRange,
-#if CAIDE_CLANG_VERSION_AT_LEAST(16, 0)
                                     clang::OptionalFileEntryRef FileEntryRef,
-#elif CAIDE_CLANG_VERSION_AT_LEAST(15, 0)
-                                    llvm::Optional<FileEntryRef> FileEntryRef,
-#else
-                                    const FileEntry *File,
-#endif
                                     StringRef /*SearchPath*/,
                                     StringRef /*RelativePath*/,
                                     const Module* /*SuggestedModule*/
-#if CAIDE_CLANG_VERSION_AT_LEAST(19, 0)
                                     , bool /*ModuleImported*/
-#endif
-#if CAIDE_CLANG_VERSION_AT_LEAST(7, 0)
                                     , SrcMgr::CharacteristicKind /*FileType*/
-#endif
                                     ) override
     {
         if (FileName.empty())
@@ -92,9 +81,7 @@ public:
         if (!isUserFile(HashLoc))
             return;
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(15, 0)
         const FileEntry* File = FileEntryRef.has_value() ? &FileEntryRef->getFileEntry() : nullptr;
-#endif
         if (!File) {
             //std::cerr << "Compilation error: " << FileName.str() << " not found\n";
             return;
@@ -183,16 +170,10 @@ public:
         state.result = replacementStack[0].replaceWith;
     }
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(10, 0)
     virtual void FileSkipped(const FileEntryRef& SkippedFileRef, const Token &FilenameTok,
                              SrcMgr::CharacteristicKind /*FileType*/) override
     {
         const FileEntry& SkippedFile = SkippedFileRef.getFileEntry();
-#else
-    virtual void FileSkipped(const FileEntry& SkippedFile, const Token &FilenameTok,
-                             SrcMgr::CharacteristicKind /*FileType*/) override
-    {
-#endif
         // Don't track system headers including each other
         if (!srcManager.isInSystemHeader(FilenameTok.getLocation())) {
             // File skipped as part of normal header guard optimization / #pragma once
@@ -286,25 +267,10 @@ private:
 
     string getCanonicalPath(const FileEntry* entry) const {
         StringRef result;
-#if CAIDE_CLANG_VERSION_AT_LEAST(3,9)
         result = entry->tryGetRealPathName();
-#endif
 
         if (result.empty()) {
-#if CAIDE_CLANG_VERSION_AT_LEAST(17,0)
             result = "(unknown path)";
-#else
-            const DirectoryEntry* dirEntry = entry->getDir();
-            StringRef strRef = srcManager.getFileManager().getCanonicalName(dirEntry);
-            string res = strRef.str();
-            res.push_back('/');
-            string fname(entry->getName());
-            int i = (int)fname.size() - 1;
-            while (i >= 0 && fname[i] != '/' && fname[i] != '\\')
-                --i;
-            res += fname.substr(i+1);
-            return res;
-#endif
         }
 
         return result.str();
@@ -343,11 +309,7 @@ public:
         : state(state_)
     {}
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(5,0)
     bool BeginSourceFileAction(CompilerInstance& compiler) override
-#else
-    bool BeginSourceFileAction(CompilerInstance& compiler, StringRef /*FileName*/) override
-#endif
     {
         compiler.getPreprocessor().addPPCallbacks(std::unique_ptr<TrackMacro>(new TrackMacro(
                 compiler.getSourceManager(), state)));
@@ -363,15 +325,9 @@ public:
     explicit InlinerFrontendActionFactory(InlinerState& state_)
         : state(state_)
     {}
-#if CAIDE_CLANG_VERSION_AT_LEAST(10, 0)
     std::unique_ptr<FrontendAction> create() override {
         return std::make_unique<InlinerFrontendAction>(state);
     }
-#else
-    FrontendAction* create() override {
-        return new InlinerFrontendAction(state);
-    }
-#endif
 };
 
 Inliner::Inliner(const vector<string>& cmdLineOptions_)

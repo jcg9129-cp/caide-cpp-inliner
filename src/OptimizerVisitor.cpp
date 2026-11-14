@@ -8,7 +8,6 @@
 #include "Report.h"
 
 #include "clang_compat.h"
-#include "clang_version.h"
 #include "SmartRewriter.h"
 #include "util.h"
 
@@ -140,7 +139,6 @@ bool OptimizerVisitor::VisitStaticAssertDecl(clang::StaticAssertDecl* staticAsse
     return true;
 }
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(10,0)
 bool OptimizerVisitor::VisitConceptDecl(clang::ConceptDecl* conceptDecl) {
 
     if (sourceManager.isInMainFile(getBeginLoc(conceptDecl))
@@ -150,7 +148,6 @@ bool OptimizerVisitor::VisitConceptDecl(clang::ConceptDecl* conceptDecl) {
     }
     return true;
 }
-#endif
 
 bool OptimizerVisitor::VisitEnumDecl(clang::EnumDecl* enumDecl) {
     if (sourceManager.isInMainFile(getBeginLoc(enumDecl))

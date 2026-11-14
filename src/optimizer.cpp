@@ -18,7 +18,6 @@
 
 // #define CAIDE_DEBUG_MODE
 #include "caide_debug.h"
-#include "clang_version.h"
 
 
 #include <clang/AST/ASTConsumer.h>
@@ -259,17 +258,10 @@ private:
 
         // No changes
         bool invalid;
-#if CAIDE_CLANG_VERSION_AT_LEAST(12, 0)
         const llvm::StringRef bufferData = sourceManager.getBufferData(sourceManager.getMainFileID(), &invalid);
         if (invalid)
             return "Inliner error";
         return string(bufferData.begin(), bufferData.end());
-#else
-        const llvm::MemoryBuffer* buf = sourceManager.getBuffer(sourceManager.getMainFileID(), &invalid);
-        if (invalid)
-            return "Inliner error";
-        return string(buf->getBufferStart(), buf->getBufferEnd());
-#endif
     }
 
 private:
@@ -343,15 +335,9 @@ public:
         , removedNames(removedNames_)
         , report(report_)
     {}
-#if CAIDE_CLANG_VERSION_AT_LEAST(10, 0)
     std::unique_ptr<FrontendAction> create() override {
         return std::make_unique<OptimizerFrontendAction>(result, macrosToKeep, identifiersToKeep, namesToRestore, removedNames, report);
     }
-#else
-    FrontendAction* create() override {
-        return new OptimizerFrontendAction(result, macrosToKeep, identifiersToKeep, namesToRestore, removedNames, report);
-    }
-#endif
 };
 
 Optimizer::Optimizer(const vector<string>& cmdLineOptions_,

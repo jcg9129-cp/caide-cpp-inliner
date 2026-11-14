@@ -4,7 +4,6 @@
 // the Free Software Foundation, either version 3 of the License, or (at your
 // option) any later version. See LICENSE.TXT for details.
 
-#include "clang_version.h"
 #include "util.h"
 
 #include <algorithm>
@@ -71,20 +70,18 @@ class DetectOptionsFrontendAction: public ASTFrontendAction {
 
 class DetectOptionsFrontendActionFactory: public clang::tooling::FrontendActionFactory {
 public:
-#if CAIDE_CLANG_VERSION_AT_LEAST(10, 0)
     std::unique_ptr<FrontendAction> create() override {
         return std::make_unique<DetectOptionsFrontendAction>();
     }
-#else
-    FrontendAction* create() override {
-        return new DetectOptionsFrontendAction();
-    }
-#endif
 };
 
 bool testOptions(const vector<string>& compilationOptions, const string& cppFile) {
+    // Trial parse only: -fno-caret-diagnostics also stops Clang from printing
+    // its own "N errors generated." summary for a failing candidate.
+    vector<string> trialOptions = compilationOptions;
+    trialOptions.push_back("-fno-caret-diagnostics");
     std::unique_ptr<clang::tooling::FixedCompilationDatabase> compilationDatabase(
-        createCompilationDatabaseFromCommandLine(compilationOptions));
+        createCompilationDatabaseFromCommandLine(trialOptions));
 
     vector<string> sources{cppFile};
     DetectOptionsFrontendActionFactory factory;
@@ -95,9 +92,7 @@ bool testOptions(const vector<string>& compilationOptions, const string& cppFile
     DiagnosticConsumer diagnostics;
     clang::tooling::ClangTool tool(*compilationDatabase, sources);
     tool.setDiagnosticConsumer(&diagnostics);
-#if CAIDE_CLANG_VERSION_AT_LEAST(9, 0)
     tool.setPrintErrorMessage(false);
-#endif
     return tool.run(&factory) == 0;
 }
 

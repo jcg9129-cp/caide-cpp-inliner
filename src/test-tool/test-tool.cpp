@@ -5,17 +5,12 @@
 // option) any later version. See LICENSE.TXT for details.
 
 #include "../caideInliner.hpp"
-#include "../clang_version.h"
 
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/Path.h>
 #include <llvm/Support/Program.h>
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(16, 0)
 #include <optional>
-#elif CAIDE_CLANG_VERSION_AT_LEAST(6, 0)
-#include <llvm/ADT/Optional.h>
-#endif
 
 #include <algorithm>
 #include <cstdio>
@@ -122,31 +117,14 @@ struct JudgeOutcome {
 
 static JudgeOutcome executeJudge(const vector<string>& command, const string& input,
                                 const string& output, const string& error, unsigned timeout) {
-#if CAIDE_CLANG_VERSION_AT_LEAST(7, 0)
     vector<llvm::StringRef> args(command.begin(), command.end());
-#else
-    vector<const char*> args;
-    for (const string& arg : command)
-        args.push_back(arg.c_str());
-    args.push_back(nullptr);
-#endif
 
     const llvm::StringRef paths[] = {input, output, error};
-#if CAIDE_CLANG_VERSION_AT_LEAST(16, 0)
     std::optional<llvm::StringRef> redirects[] = {paths[0], paths[1], paths[2]};
-#elif CAIDE_CLANG_VERSION_AT_LEAST(6, 0)
-    llvm::Optional<llvm::StringRef> redirects[] = {paths[0], paths[1], paths[2]};
-#else
-    const llvm::StringRef* redirects[] = {&paths[0], &paths[1], &paths[2]};
-#endif
 
     JudgeOutcome result;
     result.exitCode = llvm::sys::ExecuteAndWait(command[0],
-#if CAIDE_CLANG_VERSION_AT_LEAST(7, 0)
         args,
-#else
-        args.data(),
-#endif
         {}, redirects, timeout, 0, &result.error);
     return result;
 }

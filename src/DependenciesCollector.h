@@ -63,7 +63,6 @@ public:
     bool VisitTypedefType(clang::TypedefType*);
     bool VisitDependentNameType(clang::DependentNameType*);
     bool VisitTemplateSpecializationType(clang::TemplateSpecializationType*);
-#if CAIDE_CLANG_VERSION_AT_LEAST(10,0)
     bool TraverseAutoType(clang::AutoType*
 #if CAIDE_CLANG_VERSION_AT_LEAST(22, 0)
         , bool TraverseQualifier = true
@@ -71,7 +70,6 @@ public:
         );
     bool TraverseVarDecl(clang::VarDecl*);
     bool VisitAutoType(clang::AutoType*);
-#endif
 
     bool VisitStmt(clang::Stmt* stmt);
 
@@ -104,10 +102,8 @@ public:
     bool VisitUsingShadowDecl(clang::UsingShadowDecl* usingDecl);
     bool VisitUnresolvedUsingValueDecl(clang::UnresolvedUsingValueDecl* usingDecl);
     bool VisitEnumDecl(clang::EnumDecl* enumDecl);
-#if CAIDE_CLANG_VERSION_AT_LEAST(10,0)
     bool TraverseConceptSpecializationExpr(clang::ConceptSpecializationExpr* conceptExpr);
     bool VisitConceptSpecializationExpr(clang::ConceptSpecializationExpr* conceptExpr);
-#endif
 
     void printGraph(std::ostream& out) const;
 

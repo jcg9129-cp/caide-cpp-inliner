@@ -6,7 +6,6 @@
 
 #include "Verifier.h"
 #include "ErrorCollector.h"
-#include "clang_version.h"
 #include "util.h"
 
 #include <clang/Frontend/FrontendActions.h>
@@ -17,11 +16,7 @@
 #include <llvm/Support/Path.h>
 #include <llvm/Support/Program.h>
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(16, 0)
 #include <optional>
-#elif CAIDE_CLANG_VERSION_AT_LEAST(6, 0)
-#include <llvm/ADT/Optional.h>
-#endif
 
 #include <cstdio>
 #include <fstream>
@@ -140,29 +135,12 @@ struct ExecutionResult {
 ExecutionResult execute(const vector<string>& command, const string& input,
                         const string& output, const string& error, unsigned timeout) {
     // Keep the strings alive through ExecuteAndWait, as in test-tool's judge.
-#if CAIDE_CLANG_VERSION_AT_LEAST(7, 0)
     vector<llvm::StringRef> args(command.begin(), command.end());
-#else
-    vector<const char*> args;
-    for (const string& arg : command)
-        args.push_back(arg.c_str());
-    args.push_back(nullptr);
-#endif
     const llvm::StringRef paths[] = {input, output, error};
-#if CAIDE_CLANG_VERSION_AT_LEAST(16, 0)
     std::optional<llvm::StringRef> redirects[] = {paths[0], paths[1], paths[2]};
-#elif CAIDE_CLANG_VERSION_AT_LEAST(6, 0)
-    llvm::Optional<llvm::StringRef> redirects[] = {paths[0], paths[1], paths[2]};
-#else
-    const llvm::StringRef* redirects[] = {&paths[0], &paths[1], &paths[2]};
-#endif
     ExecutionResult result;
     result.exitCode = llvm::sys::ExecuteAndWait(command[0],
-#if CAIDE_CLANG_VERSION_AT_LEAST(7, 0)
         args,
-#else
-        args.data(),
-#endif
         {}, redirects, timeout, 0, &result.error);
     return result;
 }

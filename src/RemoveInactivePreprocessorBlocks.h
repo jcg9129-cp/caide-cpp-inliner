@@ -6,8 +6,6 @@
 
 #pragma once
 
-#include "clang_version.h"
-
 #include <clang/Basic/SourceLocation.h>
 #include <clang/Lex/PPCallbacks.h>
 
@@ -41,30 +39,14 @@ public:
 
     void MacroDefined(const clang::Token& MacroNameTok, const clang::MacroDirective* MD) override;
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(5,0)
     void MacroUndefined(const clang::Token& MacroNameTok, const clang::MacroDefinition& MD, const clang::MacroDirective* Undef) override;
-#elif CAIDE_CLANG_VERSION_AT_LEAST(3,7)
-    void MacroUndefined(const clang::Token& MacroNameTok, const clang::MacroDefinition& MD) override;
-#else
-    void MacroUndefined(const clang::Token& MacroNameTok, const clang::MacroDirective* MD) override;
-#endif
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(3,7)
     void MacroExpands(const clang::Token& /*MacroNameTok*/, const clang::MacroDefinition& MD,
                       clang::SourceRange Range, const clang::MacroArgs* /*Args*/) override;
-#else
-    void MacroExpands(const clang::Token& /*MacroNameTok*/, const clang::MacroDirective* MD,
-                      clang::SourceRange Range, const clang::MacroArgs* /*Args*/) override;
-#endif
 
     void If(clang::SourceLocation Loc, clang::SourceRange ConditionRange, ConditionValueKind ConditionValue) override;
-#if CAIDE_CLANG_VERSION_AT_LEAST(3,7)
     void Ifdef(clang::SourceLocation Loc, const clang::Token& MacroNameTok, const clang::MacroDefinition& /*MD*/) override;
     void Ifndef(clang::SourceLocation Loc, const clang::Token& MacroNameTok, const clang::MacroDefinition& /*MD*/) override;
-#else
-    void Ifdef(clang::SourceLocation Loc, const clang::Token& MacroNameTok, const clang::MacroDirective* /*MD*/) override;
-    void Ifndef(clang::SourceLocation Loc, const clang::Token& MacroNameTok, const clang::MacroDirective* /*MD*/) override;
-#endif
 
     void Elif(clang::SourceLocation Loc, clang::SourceRange ConditionRange, ConditionValueKind ConditionValue, clang::SourceLocation /*IfLoc*/ ) override;
     void Else(clang::SourceLocation Loc, clang::SourceLocation /*IfLoc*/) override;
@@ -75,22 +57,12 @@ public:
                             llvm::StringRef FileName,
                             bool IsAngled,
                             clang::CharSourceRange FilenameRange,
-#if CAIDE_CLANG_VERSION_AT_LEAST(16, 0)
                             clang::OptionalFileEntryRef File,
-#elif CAIDE_CLANG_VERSION_AT_LEAST(15, 0)
-                            llvm::Optional<clang::FileEntryRef> File,
-#else
-                            const clang::FileEntry *File,
-#endif
                             llvm::StringRef SearchPath,
                             llvm::StringRef RelativePath,
                             const clang::Module* /*SuggestedModule*/
-#if CAIDE_CLANG_VERSION_AT_LEAST(19, 0)
                             , bool /*ModuleImported*/
-#endif
-#if CAIDE_CLANG_VERSION_AT_LEAST(7, 0)
                             , clang::SrcMgr::CharacteristicKind FileType
-#endif
                             ) override;
 
     // EndOfMainFile() is called too late; instead, we call this one manually in the consumer.

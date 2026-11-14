@@ -90,8 +90,8 @@ and rerun the program. Observe how the output file changes accordingly.
 
 ## Build
 
-clang library is a required dependency. You can either build it from scratch,
-or use a version installed in your system.
+Clang/LLVM 21 or newer is required; tested with versions 22 and 23. You can
+either build it from scratch or use a version installed in your system.
 
 * To build from scratch:
 

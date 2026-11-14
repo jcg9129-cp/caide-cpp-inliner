@@ -317,29 +317,13 @@ void RemoveInactivePreprocessorBlocks::MacroDefined(
     impl->MacroDefined(MacroNameTok, MD);
 }
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(5,0)
 void RemoveInactivePreprocessorBlocks::MacroUndefined(
     const Token& MacroNameTok, const MacroDefinition& MacroDef, const MacroDirective* /*Undef*/)
 {
     const DefMacroDirective* MD = MacroDef.getLocalDirective();
     impl->MacroUndefined(MacroNameTok, MD);
 }
-#elif CAIDE_CLANG_VERSION_AT_LEAST(3,7)
-void RemoveInactivePreprocessorBlocks::MacroUndefined(
-    const Token& MacroNameTok, const MacroDefinition& MacroDef)
-{
-    const DefMacroDirective* MD = MacroDef.getLocalDirective();
-    impl->MacroUndefined(MacroNameTok, MD);
-}
-#else
-void RemoveInactivePreprocessorBlocks::MacroUndefined(
-    const Token& MacroNameTok, const MacroDirective* MD)
-{
-    impl->MacroUndefined(MacroNameTok, MD);
-}
-#endif
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(3,7)
 void RemoveInactivePreprocessorBlocks::MacroExpands(
     const Token& /*MacroNameTok*/, const MacroDefinition& MacroDef,
     SourceRange Range, const MacroArgs* /*Args*/)
@@ -347,14 +331,6 @@ void RemoveInactivePreprocessorBlocks::MacroExpands(
     const DefMacroDirective* MD = MacroDef.getLocalDirective();
     impl->MacroExpands(MD, Range);
 }
-#else
-void RemoveInactivePreprocessorBlocks::MacroExpands(
-    const Token& /*MacroNameTok*/, const MacroDirective* MD,
-    SourceRange Range, const MacroArgs* /*Args*/)
-{
-    impl->MacroExpands(MD, Range);
-}
-#endif
 
 void RemoveInactivePreprocessorBlocks::Finalize(
         std::unordered_set<string>& removedNames,
@@ -369,24 +345,14 @@ void RemoveInactivePreprocessorBlocks::If(
     impl->If(Loc, ConditionRange, ConditionValue);
 }
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(3,7)
 void RemoveInactivePreprocessorBlocks::Ifdef(
     SourceLocation Loc, const Token& MacroNameTok, const MacroDefinition& MD)
-#else
-void RemoveInactivePreprocessorBlocks::Ifdef(
-    SourceLocation Loc, const Token& MacroNameTok, const MacroDirective* MD)
-#endif
 {
     impl->Ifdef(Loc, MacroNameTok, (bool)MD);
 }
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(3,7)
 void RemoveInactivePreprocessorBlocks::Ifndef(
     SourceLocation Loc, const Token& MacroNameTok, const MacroDefinition& MD)
-#else
-void RemoveInactivePreprocessorBlocks::Ifndef(
-    SourceLocation Loc, const Token& MacroNameTok, const MacroDirective* MD)
-#endif
 {
     impl->Ifndef(Loc, MacroNameTok, (bool)MD);
 }
@@ -412,22 +378,12 @@ void RemoveInactivePreprocessorBlocks::InclusionDirective(
     StringRef /*FileName*/,
     bool /*IsAngled*/,
     CharSourceRange FilenameRange,
-#if CAIDE_CLANG_VERSION_AT_LEAST(16, 0)
     clang::OptionalFileEntryRef /*File*/,
-#elif CAIDE_CLANG_VERSION_AT_LEAST(15, 0)
-    llvm::Optional<FileEntryRef> /*File*/,
-#else
-    const FileEntry* /*File*/,
-#endif
     StringRef /*SearchPath*/,
     StringRef /*RelativePath*/,
     const Module* /*SuggestedModule*/
-#if CAIDE_CLANG_VERSION_AT_LEAST(19, 0)
     , bool /*ModuleImported*/
-#endif
-#if CAIDE_CLANG_VERSION_AT_LEAST(7, 0)
     , SrcMgr::CharacteristicKind /*FileType*/
-#endif
     )
 {
     impl->InclusionDirective(HashLoc, FilenameRange);

@@ -124,7 +124,6 @@ bool DependenciesCollector::TraverseTemplateSpecializationType(TemplateSpecializ
     return true;
 }
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(10,0)
 bool DependenciesCollector::TraverseAutoType(AutoType* autoType
 #if CAIDE_CLANG_VERSION_AT_LEAST(22, 0)
         , bool TraverseQualifier
@@ -168,7 +167,6 @@ bool DependenciesCollector::TraverseVarDecl(VarDecl* valueDecl) {
 
     return true;
 }
-#endif
 
 Decl* DependenciesCollector::getCurrentDecl() const {
     return declStack.empty() ? nullptr : declStack.top();
@@ -307,12 +305,10 @@ bool DependenciesCollector::VisitTemplateSpecializationType(TemplateSpecializati
     return true;
 }
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(10,0)
 bool DependenciesCollector::VisitAutoType(AutoType* autoType) {
     insertReference(getCurrentDecl(), autoType->getTypeConstraintConcept());
     return true;
 }
-#endif
 
 DependenciesCollector::DependenciesCollector(SourceManager& srcMgr,
         Sema& sema_,
@@ -502,7 +498,6 @@ bool DependenciesCollector::VisitCXXConstructExpr(CXXConstructExpr* constructorE
     return true;
 }
 
-#if CAIDE_CLANG_VERSION_AT_LEAST(10,0)
 bool DependenciesCollector::TraverseConceptSpecializationExpr(ConceptSpecializationExpr* conceptExpr) {
     dbg(CAIDE_FUNC);
     RecursiveASTVisitor::TraverseConceptSpecializationExpr(conceptExpr);
@@ -526,14 +521,9 @@ bool DependenciesCollector::VisitConceptSpecializationExpr(ConceptSpecialization
     insertReference(getCurrentDecl(), conceptExpr->getNamedConcept());
     return true;
 }
-#endif
 
 bool DependenciesCollector::VisitCXXConstructorDecl(CXXConstructorDecl* ctorDecl) {
-#if CAIDE_CLANG_VERSION_AT_LEAST(3,9)
     CXXConstructorDecl* inheritedCtor = ctorDecl->getInheritedConstructor().getConstructor();
-#else
-    auto* inheritedCtor = const_cast<CXXConstructorDecl*>(ctorDecl->getInheritedConstructor());
-#endif
     insertReference(ctorDecl, inheritedCtor);
     for (auto it = ctorDecl->init_begin(); it != ctorDecl->init_end(); ++it) {
         CXXCtorInitializer* ctorInit = *it;
@@ -606,17 +596,8 @@ bool DependenciesCollector::VisitVarDecl(VarDecl* varDecl) {
     // template variables/members are instantiated only when used, and locals
     // are kept with their function rather than becoming independent roots.
     ASTContext& ctx = varDecl->getASTContext();
-#if CAIDE_CLANG_VERSION_AT_LEAST(12, 0)
     const bool dynamicInit = varDecl->hasInit() && !varDecl->hasConstantInitialization();
-#else
-    const bool dynamicInit = varDecl->hasInit() && !varDecl->checkInitIsICE();
-#endif
-#if CAIDE_CLANG_VERSION_AT_LEAST(10, 0)
     const bool needsDestructor = varDecl->needsDestruction(ctx) == QualType::DK_cxx_destructor;
-#else
-    const bool needsDestructor = varDecl->getType().isDestructedType() == QualType::DK_cxx_destructor;
-    (void)ctx;
-#endif
     if (dynamicInit || needsDestructor)
         keepRoot(srcInfo, varDecl, RootReason::SideEffect);
     return true;
@@ -651,11 +632,7 @@ bool DependenciesCollector::VisitInitListExpr(InitListExpr* initList) {
 // that it brings into scope.
 bool DependenciesCollector::VisitUsingShadowDecl(UsingShadowDecl* usingShadowDecl) {
     // Add dependency on the actually written using declaration.
-#if CAIDE_CLANG_VERSION_AT_LEAST(13,0)
     insertReference(usingShadowDecl, usingShadowDecl->getIntroducer());
-#else
-    insertReference(usingShadowDecl, usingShadowDecl->getUsingDecl());
-#endif
 
     insertReference(usingShadowDecl, usingShadowDecl->getTargetDecl());
     return true;

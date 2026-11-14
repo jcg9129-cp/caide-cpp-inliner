@@ -70,10 +70,10 @@ else()
     message(STATUS "Using LLVM from submodule ${LLVM_PACKAGE_VERSION}")
 endif()
 
-if(LLVM_PACKAGE_VERSION VERSION_LESS "11")
-    message(WARNING "A version of clang/llvm that is too old is detected. Build failure is possible.")
+if(LLVM_PACKAGE_VERSION VERSION_LESS "21")
+    message(FATAL_ERROR "Clang/LLVM 21 or newer is required (found ${LLVM_PACKAGE_VERSION}).")
 endif()
-if(LLVM_PACKAGE_VERSION VERSION_GREATER_EQUAL "22")
+if(LLVM_PACKAGE_VERSION VERSION_GREATER_EQUAL "24")
     message(WARNING "A version of clang/llvm that is too recent is detected. Build failure is possible.")
 endif()
 
@@ -108,13 +108,7 @@ endfunction(add_compiler_option_if_supported)
 
 # CXX_STANDARD() is available only in cmake >= 3.
 # Set the compiler flag explicitly.
-if(LLVM_PACKAGE_VERSION VERSION_LESS "10")
-    add_compiler_option_if_supported("-std=c++11")
-elseif(LLVM_PACKAGE_VERSION VERSION_LESS "16")
-    add_compiler_option_if_supported("-std=c++14")
-else()
-    add_compiler_option_if_supported("-std=c++17")
-endif()
+add_compiler_option_if_supported("-std=c++17")
 
 if(MSVC)
     add_compile_options(/W3)
