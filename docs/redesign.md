@@ -200,7 +200,7 @@ Each one is independently useful and shippable.
 | M9 | Quick fixes: C interface appends to default `macrosToKeep`; `cmd` creates its temp dir; `--strict` / distinct exit code on fallback; quieter builds (`-Wlogical-op` only when supported, detection noise) | usability |
 | M4 | Keep/remove/restore reason report | diagnosability |
 | M10 | Restore removed `#define` macros in repair | repair gap |
-| M11 | ~~Remove unused system `#include`s~~ — deferred, see §7 item 6 | output size |
+| M11 | ~~Remove unused system `#include`s~~ — deferred, see §7 item 5 | output size |
 | M12 | Linux/Docker CI with `CAIDE_TEST_CXX`; real-code corpus (atl + solutions) | test gap |
 | M5 | Unit-based editing engine | P5 |
 | M6 | Finer semantic checks, one at a time (§4.5) | silent miscompiles |
@@ -208,7 +208,7 @@ Each one is independently useful and shippable.
 | — | Measure speed before optimizing it (verification doubles parsing; repair reruns the optimizer) | — |
 | — | macOS: option detection with Homebrew GCC (`__float128`) | only for native macOS use |
 
-Order after M3 (decided 2026-11-14): M8, M9, M10, M12, M4. M11 deferred (§7 item 6).
+Order after M3 (decided 2026-11-14): M8, M9, M10, M12, M4. M11 deferred (§7 item 5).
 
 ## 7. Decisions
 
@@ -243,7 +243,7 @@ Decided 2026-11-14:
      emit the unoptimized flattened file. The output is never left unchecked
      without a warning.
 
-6. **M11, removing unused system `#include`s: deferred** (2026-11-14; the user
+5. **M11, removing unused system `#include`s: deferred** (2026-11-14; the user
    left the call to Claude). Removing an include can change behaviour and
    still compile: without `<cmath>`, `abs(x)` on a `double` can resolve to C's
    `int abs(int)` and silently truncate; a header can also supply an overload,
