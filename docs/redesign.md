@@ -182,15 +182,23 @@ Each one is independently useful and shippable.
 
 | M | Work | Fixes |
 |---|---|---|
-| M0 | Regression cases for `sizeof`+unused field and side-effecting global; check `#ifdef __clang__` handling. Confirms or disproves P3, P4, P6. | — |
-| M1 | Three-way comparison in `src/test-tool` | test gap |
-| M2 | Keep records whole; treat template families as one unit; root globals with side effects | P3, P4, part of P1 |
-| M3 | Bounded g++ verification + repair + fallback to unoptimized | P2, P1 |
-| M4 | Keep/remove reason report | diagnosability |
+| M0 | Regression cases for `sizeof`+unused field and side-effecting global; check `#ifdef __clang__` handling. | done |
+| M1 | Judge compile-and-run check in `src/test-tool` | done |
+| M2 | Keep record layouts whole; root globals with side effects | done |
+| M3 | Bounded verification (embedded Clang + judge) + repair + fallback | done |
+| M8 | `--verify-run`: run original and inlined programs on sample inputs, compare stdout + exit code; fall back on any difference | silent miscompiles (runtime) |
+| M9 | Quick fixes: C interface appends to default `macrosToKeep`; `cmd` creates its temp dir; `--strict` / distinct exit code on fallback; quieter builds (`-Wlogical-op` only when supported, detection noise) | usability |
+| M4 | Keep/remove/restore reason report | diagnosability |
+| M10 | Restore removed `#define` macros in repair | repair gap |
+| M11 | Remove unused system `#include`s (verified, restored on failure) | output size |
+| M12 | Linux/Docker CI with `CAIDE_TEST_CXX`; real-code corpus (atl + solutions) | test gap |
 | M5 | Unit-based editing engine | P5 |
 | M6 | Finer semantic checks, one at a time (§4.5) | silent miscompiles |
 | M7 | Bounded Clang range + compat layer | P7 |
-| — | Optional: an "aggressive" mode with runtime differential testing | — |
+| — | Measure speed before optimizing it (verification doubles parsing; repair reruns the optimizer) | — |
+| — | macOS: option detection with Homebrew GCC (`__float128`) | only for native macOS use |
+
+Order after M3 (decided 2026-11-14): M8, then M9.
 
 ## 7. Decisions
 
