@@ -494,7 +494,7 @@ void OptimizerVisitor::removeDecl(Decl* decl) {
 
     rewriter.removeRange(start, end);
 
-    if (RawComment* comment = decl->getASTContext().getRawCommentForDeclNoCache(decl))
+    if (const RawComment* comment = getRawCommentForDecl(decl))
         rewriter.removeRange(comment->getSourceRange());
 }
 

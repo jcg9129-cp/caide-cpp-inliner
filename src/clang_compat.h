@@ -28,6 +28,7 @@ clang::SourceLocation getBeginLoc(const clang::Decl* decl);
 clang::SourceLocation getEndLoc(const clang::Decl* decl);
 clang::SourceLocation getBeginLoc(const clang::RawComment* comment);
 clang::SourceLocation getEndLoc(const clang::RawComment* comment);
+const clang::RawComment* getRawCommentForDecl(const clang::Decl* decl);
 bool isWrittenInBuiltinFile(const clang::SourceManager& srcManager,
     clang::SourceLocation location);
 

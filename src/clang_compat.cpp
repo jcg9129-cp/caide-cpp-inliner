@@ -7,7 +7,9 @@
 #include "clang_compat.h"
 #include "clang_version.h"
 
+#include <clang/AST/ASTContext.h>
 #include <clang/AST/DeclCXX.h>
+#include <clang/AST/DeclTemplate.h>
 #include <clang/AST/RawCommentList.h>
 #include <clang/Basic/SourceManager.h>
 
@@ -56,6 +58,23 @@ SourceLocation getEndLoc(const RawComment* comment) {
     return comment->getEndLoc();
 #else
     return comment->getLocEnd();
+#endif
+}
+
+const RawComment* getRawCommentForDecl(const Decl* decl) {
+#if CAIDE_CLANG_VERSION_AT_LEAST(23,0)
+    // LLVM 23's redeclaration cache can let one redeclaration's comment mask
+    // a different comment directly on this declaration. Return null in that
+    // case, rather than returning another declaration's comment.
+    const Decl* originalDecl = nullptr;
+    const RawComment* comment =
+        decl->getASTContext().getRawCommentForAnyRedecl(decl, &originalDecl);
+    if (originalDecl == decl ||
+        (originalDecl && originalDecl == decl->getDescribedTemplate()))
+        return comment;
+    return nullptr;
+#else
+    return decl->getASTContext().getRawCommentForDeclNoCache(decl);
 #endif
 }
 

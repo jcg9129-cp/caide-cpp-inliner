@@ -346,7 +346,7 @@ bool DependenciesCollector::VisitDecl(Decl* decl) {
     insertReference(decl, getCorrespondingDeclInNonInstantiatedContext(decl));
 
     // Remainder of the function processes special comments.
-    RawComment* comment = decl->getASTContext().getRawCommentForDeclNoCache(decl);
+    const RawComment* comment = getRawCommentForDecl(decl);
     if (!comment)
         return true;
 
