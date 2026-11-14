@@ -46,6 +46,22 @@ VerificationResult verifyWithJudge(const std::string& code,
     const std::vector<std::string>& judgeCommand,
     const std::string& temporaryDirectory);
 
+struct BehaviourVerificationResult {
+    bool useUnoptimized = false;
+    std::string warnings;
+};
+
+// Run only after compile verification passes. Runtime differences cannot guide
+// repair; compare the fallback too, on the first differing input, for diagnosis.
+// All temporary sources, executables and captured output are removed on return.
+BehaviourVerificationResult verifyBehaviour(const std::string& code,
+    const std::string& unoptimizedCode,
+    const std::vector<std::string>& cppFilePaths,
+    const std::vector<std::string>& compilationOptions,
+    const std::vector<std::string>& judgeCommand,
+    const std::vector<std::string>& inputs,
+    const std::string& temporaryDirectory);
+
 // Identifier names on candidate error/note lines that the optimizer removed.
 // Uses whole lines, ignoring columns, literals and comments.
 std::unordered_set<std::string> findRepairNames(const std::string& code,

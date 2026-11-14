@@ -117,6 +117,16 @@ After pruning:
 3. Stop after a small number of rounds, a time budget or a memory budget. If
    the budget runs out, the compiler crashes, or an error can't be mapped back,
    emit the unoptimized flattened file.
+4. With `--verify-with` and one or more `--verify-run <path>` options,
+   build the original sources and the passing candidate with the judge compiler.
+   A path is an input file or a directory of `.in` files, sorted by name without
+   recursion. Compare stdout byte-for-byte and exit status on each sample, with
+   a 10-second timeout per run. A difference falls back immediately, without
+   repair, and the fallback is checked on the same input to diagnose stage-1
+   problems. If the original cannot be built, warn and skip runtime checking;
+   unreadable inputs are warned about and skipped. Time- or randomness-dependent
+   programs may always fall back. The C++ API exposes `verifyInputs`; the C
+   interface is unchanged.
 
 Termination is guaranteed: each round restores at least one unit, so there are
 at most N rounds. The result is not guaranteed to be minimal. Restoring code

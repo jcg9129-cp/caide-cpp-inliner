@@ -154,6 +154,18 @@ public:
     /// Default value is empty (embedded Clang check only).
     std::vector<std::string> verifyCommand;
 
+    /// \brief Optional sample input paths for runtime output verification.
+    ///
+    /// After compile verification passes, build the original and optimized
+    /// programs with verifyCommand and compare exit status and stdout on each
+    /// input, with a 10-second timeout per run. A difference writes the
+    /// unoptimized output. Programs depending on time or randomness may always
+    /// fall back. Used only when removeUnusedCode and verifyOutput are true
+    /// and verifyCommand is non-empty.
+    ///
+    /// Default value is empty (no runtime checks).
+    std::vector<std::string> verifyInputs;
+
 private:
     const std::string temporaryDirectory;
 };

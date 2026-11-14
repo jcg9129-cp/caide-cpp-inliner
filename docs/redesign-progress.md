@@ -134,3 +134,30 @@ Tests: `repair-restores-function`, `repair-restores-type`,
 `repair-restores-overloads`, `repair-gives-up`.
 
 Result on the Mac (LLVM 22.1.8): builds cleanly, all 76 tests pass.
+
+## M8 — runtime verification on sample inputs (code applied, not yet built, 2026-11-14)
+
+Codex wrote it, Opus reviewed. `CppInliner::verifyInputs`; CLI
+`--verify-run <file|dir of *.in>` (repeatable, needs `--verify-with`). After
+compile verification passes, `verifyBehaviour` (Verifier.cpp) builds the
+original (judge command + `-I/-iquote/-D/-U` from the clang options) and the
+candidate, runs both per input (10 s), compares exit status + stdout bytes;
+first difference → unoptimized output, and the fallback is run too to tell a
+stage-1/nondeterminism problem apart. Original not building → warn, skip.
+C interface unchanged. Tests: `verify-run-passes`,
+`verify-run-detects-difference` (force-removes a printing global).
+
+## Pending checks for the user (run on the Mac, paste the output)
+
+Work continues without waiting for these; they're run whenever convenient.
+Remove an entry once its result is recorded above.
+
+1. **M8** (commit "Runtime verification…"):
+   ```sh
+   make -C build -j4 test-tool cmd && \
+   (cd build && ctest --output-on-failure 2>&1 | grep -E "Failed|tests passed|Stderr missing" | head -20) && \
+   build/cmd/cmd -std=c++17 -- -d tests/temp --verify-with "g++ -std=c++23" \
+     --verify-run tests/cases/verify-run-passes -o /tmp/m8-out.cpp tests/cases/verify-run-passes/1.cpp; \
+   echo "cmd exit=$?"; cat /tmp/m8-out.cpp
+   ```
+   Expect: 78/78 pass; cmd prints nothing on stderr; `unused()` removed.

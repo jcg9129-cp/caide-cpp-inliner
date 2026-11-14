@@ -55,6 +55,7 @@ CppInliner::CppInliner(const string& temporaryDirectory_)
     , removeComments{false}
     , verifyOutput{true}
     , verifyCommand{}
+    , verifyInputs{}
     , temporaryDirectory{trimEndPathSeparators(temporaryDirectory_)}
 {
 }
@@ -211,6 +212,15 @@ void CppInliner::inlineCode(const vector<string>& cppFilePaths, const string& ou
                 std::cerr << "caide inliner: warning: unoptimized output also fails with the "
                              "judge compiler (a stage-1 or environment problem)\n";
             }
+        }
+
+        if (verifyOutput && result.passed && !verifyCommand.empty() && !verifyInputs.empty()) {
+            const string fallback = prepareOutput(unoptimizedCode);
+            const auto behaviour = internal::verifyBehaviour(code, fallback, cppFilePaths,
+                clangCompilationOptions, verifyCommand, verifyInputs, temporaryDirectory);
+            std::cerr << behaviour.warnings;
+            if (behaviour.useUnoptimized)
+                code = fallback;
         }
     } else {
         code = prepareOutput(unoptimizedCode);

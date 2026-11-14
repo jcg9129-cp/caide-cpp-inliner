@@ -339,6 +339,20 @@ static bool runTest(const string& testDirectory, const string& tempDirectory, ca
         }
     }
 
+    inliner.verifyInputs = readNonEmptyLines(pathConcat(testDirectory, "verifyInputs.txt"));
+    for (string& input : inliner.verifyInputs) {
+        const string marker = "TEST_ROOT";
+        std::size_t pos = 0;
+        bool substituted = false;
+        while ((pos = input.find(marker, pos)) != string::npos) {
+            input.replace(pos, marker.size(), testDirectory);
+            pos += testDirectory.size();
+            substituted = true;
+        }
+        if (!substituted && !llvm::sys::path::is_absolute(input))
+            input = pathConcat(testDirectory, input);
+    }
+
     // Add to the library's default macrosToKeep (compiler/platform macros such as
     // __clang__ and __GNUC__), the same way `cmd -k` does, so that tests see the
     // behaviour users get.

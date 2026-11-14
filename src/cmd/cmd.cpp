@@ -9,8 +9,10 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/CommandLine.h>
+#include <llvm/Support/FileSystem.h>
 #include <llvm/Support/StringSaver.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -44,10 +46,43 @@ static void printUsage(std::ostream& os, const char* prog) {
         "  -c, --strip-comments  Remove all comments from the output\n"
         "  --verify-with <command>  Also compile and link with a quoted judge command\n"
         "                           (e.g. \"g++ -std=c++23 -O2\") after the embedded check\n"
+        "  --verify-run <path>  Compare runs on an input file, or sorted .in files in a\n"
+        "                       directory (no recursion; repeatable; requires --verify-with)\n"
         "  --no-verify        Disable output verification and fallback\n"
         "  -h, --help         Show this help and exit\n"
         "\n"
         "Remaining arguments after '--' are treated as input source files.\n";
+}
+
+static vector<string> verificationInputs(const vector<string>& paths) {
+    vector<string> inputs;
+    for (const string& path : paths) {
+        llvm::sys::fs::file_status status;
+        const auto error = llvm::sys::fs::status(path, status);
+        if (error)
+            throw runtime_error("cannot access --verify-run path " + path + ": " + error.message());
+        if (llvm::sys::fs::is_regular_file(status)) {
+            inputs.push_back(path);
+        } else if (llvm::sys::fs::is_directory(status)) {
+            vector<string> files;
+            std::error_code ec;
+            for (llvm::sys::fs::directory_iterator it(path, ec), end;
+                 !ec && it != end; it.increment(ec)) {
+                const string file = it->path();
+                if (file.size() >= 3 && file.compare(file.size() - 3, 3, ".in") == 0 &&
+                    llvm::sys::fs::is_regular_file(file))
+                    files.push_back(file);
+            }
+            if (ec)
+                throw runtime_error("cannot read --verify-run directory " + path + ": " + ec.message());
+            // All paths have the same directory prefix, so this sorts by name.
+            sort(files.begin(), files.end());
+            inputs.insert(inputs.end(), files.begin(), files.end());
+        } else {
+            throw runtime_error("--verify-run path is not a regular file or directory: " + path);
+        }
+    }
+    return inputs;
 }
 
 int main(int argc, const char* argv[]) {
@@ -76,6 +111,7 @@ int main(int argc, const char* argv[]) {
     bool stripComments = false;
     bool verifyOutput = true;
     vector<string> verifyCommand;
+    vector<string> verifyRunPaths;
 
     const string clangOptionsEnd = "--";
     const string directoryFlag = "-d";
@@ -146,11 +182,18 @@ int main(int argc, const char* argv[]) {
                 return 1;
             }
             verifyCommand.assign(args.begin(), args.end());
+        } else if (flag == "--verify-run") {
+            verifyRunPaths.emplace_back(requireArg(i, flag));
         } else if (flag == "--no-verify") {
             verifyOutput = false;
         } else {
             sourceFiles.emplace_back(argv[i]);
         }
+    }
+
+    if (!verifyRunPaths.empty() && verifyCommand.empty()) {
+        std::cerr << "Error: --verify-run requires --verify-with\n";
+        return 1;
     }
 
     if (sourceFiles.empty()) {
@@ -161,6 +204,7 @@ int main(int argc, const char* argv[]) {
 
     try {
         caide::CppInliner inliner(tmpDirectory);
+        inliner.verifyInputs = verificationInputs(verifyRunPaths);
 
         if (autoDetect) {
             // Detection replaces clangCompilationOptions, so apply the user's
