@@ -5,8 +5,19 @@
 // option) any later version. See LICENSE.TXT for details.
 
 #include "../caideInliner.hpp"
+#include "../clang_version.h"
+
+#include <llvm/Support/Program.h>
+
+#if CAIDE_CLANG_VERSION_AT_LEAST(16, 0)
+#include <optional>
+#elif CAIDE_CLANG_VERSION_AT_LEAST(6, 0)
+#include <llvm/ADT/Optional.h>
+#endif
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -34,6 +45,185 @@ static vector<string> readNonEmptyLines(const string& filePath) {
 
 static string pathConcat(const string& directory, const string& fileName) {
     return directory + "/" + fileName;
+}
+
+// Optionally check semantics independently of the etalon: compile the original
+// and inlined programs with CAIDE_TEST_CXX, then compare their outcomes/stdout.
+// Only per-test portable flags reach the judge; auto-detected Clang flags must
+// never reach it. Fragments/Clang-only originals may fail to build and are skipped.
+struct JudgeTempFiles {
+    const string& directory;
+
+    ~JudgeTempFiles() {
+        for (const char* name : {"judge-original", "judge-inlined", "judge-build.log",
+                                 "judge-original.stdout", "judge-original.stderr",
+                                 "judge-inlined.stdout", "judge-inlined.stderr"})
+            std::remove(pathConcat(directory, name).c_str());
+    }
+};
+
+struct JudgeOutcome {
+    int exitCode;
+    string error;
+};
+
+static JudgeOutcome executeJudge(const vector<string>& command, const string& input,
+                                const string& output, const string& error, unsigned timeout) {
+#if CAIDE_CLANG_VERSION_AT_LEAST(7, 0)
+    vector<llvm::StringRef> args(command.begin(), command.end());
+#else
+    vector<const char*> args;
+    for (const string& arg : command)
+        args.push_back(arg.c_str());
+    args.push_back(nullptr);
+#endif
+
+    const llvm::StringRef paths[] = {input, output, error};
+#if CAIDE_CLANG_VERSION_AT_LEAST(16, 0)
+    std::optional<llvm::StringRef> redirects[] = {paths[0], paths[1], paths[2]};
+#elif CAIDE_CLANG_VERSION_AT_LEAST(6, 0)
+    llvm::Optional<llvm::StringRef> redirects[] = {paths[0], paths[1], paths[2]};
+#else
+    const llvm::StringRef* redirects[] = {&paths[0], &paths[1], &paths[2]};
+#endif
+
+    JudgeOutcome result;
+    result.exitCode = llvm::sys::ExecuteAndWait(command[0],
+#if CAIDE_CLANG_VERSION_AT_LEAST(7, 0)
+        args,
+#else
+        args.data(),
+#endif
+        {}, redirects, timeout, 0, &result.error);
+    return result;
+}
+
+static vector<string> judgeOptions(const vector<string>& options, bool includePaths) {
+    vector<string> result;
+    for (std::size_t i = 0; i < options.size(); ++i) {
+        const string& opt = options[i];
+        // User include paths are needed only by the original: their headers get
+        // inlined. System include paths (-isystem) are needed by both, because
+        // the output keeps system #includes as they are.
+        const bool include = opt.compare(0, 2, "-I") == 0 || opt.compare(0, 7, "-iquote") == 0;
+        const bool portable = opt.compare(0, 2, "-D") == 0 ||
+            opt.compare(0, 2, "-U") == 0 || opt.compare(0, 5, "-std=") == 0 ||
+            opt.compare(0, 8, "-isystem") == 0;
+        if (!include && !portable)
+            continue;
+
+        if (portable || includePaths)
+            result.push_back(opt);
+        if ((opt == "-I" || opt == "-isystem" || opt == "-iquote" ||
+             opt == "-D" || opt == "-U") && i + 1 < options.size()) {
+            ++i;
+            if (portable || includePaths)
+                result.push_back(options[i]);
+        }
+    }
+    return result;
+}
+
+static void printJudgeLog(const string& path, unsigned maxLines, const JudgeOutcome& outcome) {
+    if (!outcome.error.empty())
+        std::cout << "[judge] " << outcome.error << '\n';
+    ifstream log{path.c_str()};
+    string line;
+    for (unsigned i = 0; i < maxLines && std::getline(log, line); ++i)
+        std::cout << line << '\n';
+}
+
+static bool compareJudgeStdout(const string& originalPath, const string& inlinedPath) {
+    ifstream original{originalPath.c_str(), std::ios::binary};
+    ifstream inlined{inlinedPath.c_str(), std::ios::binary};
+    if (!original || !inlined) {
+        std::cout << "[judge] could not read captured stdout\n";
+        return false;
+    }
+    string originalLine, inlinedLine;
+    for (std::size_t line = 1; ; ++line) {
+        const bool hasOriginal = static_cast<bool>(std::getline(original, originalLine));
+        const bool hasInlined = static_cast<bool>(std::getline(inlined, inlinedLine));
+        if (!hasOriginal && !hasInlined)
+            return true;
+        if (hasOriginal != hasInlined || originalLine != inlinedLine ||
+            original.eof() != inlined.eof()) {
+            std::cout << "[judge] stdout differs at line " << line << '\n'
+                      << "[judge] original: " << (hasOriginal ? originalLine : "<end of stdout>")
+                      << (hasOriginal && original.eof() ? " [no final newline]" : "") << '\n'
+                      << "[judge] inlined:  " << (hasInlined ? inlinedLine : "<end of stdout>")
+                      << (hasInlined && inlined.eof() ? " [no final newline]" : "") << '\n';
+            return false;
+        }
+    }
+}
+
+static bool checkJudge(const string& testDirectory, const string& tempDirectory,
+                       const vector<string>& cppFiles, const vector<string>& options) {
+    const char* cxx = std::getenv("CAIDE_TEST_CXX");
+    if (!cxx || !*cxx)
+        return true;
+    std::istringstream words{cxx};
+    vector<string> command;
+    for (string word; words >> word; )
+        command.push_back(word);
+    if (command.empty())
+        return true;
+
+    const auto compiler = llvm::sys::findProgramByName(command[0]);
+    if (!compiler) {
+        // A misconfigured judge must not pass silently.
+        std::cout << "[judge] failed: judge compiler not found: " << command[0] << ": "
+                  << compiler.getError().message() << '\n';
+        return false;
+    }
+    command[0] = *compiler;
+    const JudgeTempFiles cleanup{tempDirectory};
+    const string originalExe = pathConcat(tempDirectory, "judge-original");
+    const string inlinedExe = pathConcat(tempDirectory, "judge-inlined");
+    const string buildLog = pathConcat(tempDirectory, "judge-build.log");
+
+    for (bool original : {true, false}) {
+        vector<string> build = command;
+        const vector<string> flags = judgeOptions(options, original);
+        build.insert(build.end(), flags.begin(), flags.end());
+        if (original)
+            build.insert(build.end(), cppFiles.begin(), cppFiles.end());
+        else
+            build.push_back(pathConcat(tempDirectory, "result.cpp"));
+        build.push_back("-o");
+        build.push_back(original ? originalExe : inlinedExe);
+        const JudgeOutcome outcome = executeJudge(build, "", buildLog, buildLog, 60);
+        if (outcome.exitCode != 0) {
+            std::cout << (original
+                ? "[judge] skipped: original does not build with the judge compiler\n"
+                : "[judge] failed: inlined output does not build with the judge compiler\n");
+            printJudgeLog(buildLog, original ? 10 : 20, outcome);
+            return original;
+        }
+    }
+
+    string input = pathConcat(testDirectory, "input.txt");
+    if (!ifstream{input.c_str()})
+        input.clear(); // An empty redirect disconnects stdin portably.
+    const string originalStdout = pathConcat(tempDirectory, "judge-original.stdout");
+    const string inlinedStdout = pathConcat(tempDirectory, "judge-inlined.stdout");
+    const JudgeOutcome original = executeJudge({originalExe}, input, originalStdout,
+        pathConcat(tempDirectory, "judge-original.stderr"), 10);
+    const JudgeOutcome inlined = executeJudge({inlinedExe}, input, inlinedStdout,
+        pathConcat(tempDirectory, "judge-inlined.stderr"), 10);
+    const bool sameStdout = compareJudgeStdout(originalStdout, inlinedStdout);
+    // LLVM uses -2 for both crashes and timeouts; its error text distinguishes them.
+    const bool sameOutcome = original.exitCode == inlined.exitCode &&
+        (original.exitCode >= 0 || original.error == inlined.error);
+    if (!sameOutcome || !sameStdout || original.exitCode == -1 || inlined.exitCode == -1) {
+        std::cout << "[judge] original exit code: " << original.exitCode
+                  << (original.error.empty() ? "" : " (" + original.error + ")") << '\n'
+                  << "[judge] inlined exit code: " << inlined.exitCode
+                  << (inlined.error.empty() ? "" : " (" + inlined.error + ")") << '\n';
+        return false;
+    }
+    return true;
 }
 
 static bool runTest(const string& testDirectory, const string& tempDirectory, caide::CppInliner inliner) {
@@ -86,7 +276,7 @@ static bool runTest(const string& testDirectory, const string& tempDirectory, ca
             opt.replace(p, TEST_ROOT_MARKER.length(), testDirectory);
         }
 
-        inliner.clangCompilationOptions.push_back(std::move(opt));
+        inliner.clangCompilationOptions.push_back(opt);
     }
 
     const char* verbose = std::getenv("CAIDE_TEST_VERBOSE");
@@ -135,27 +325,30 @@ static bool runTest(const string& testDirectory, const string& tempDirectory, ca
     const vector<string> etalon = readNonEmptyLines(etalonFilePath);
 
     const int minLength = (int)std::min(output.size(), etalon.size());
+    bool etalonMatches = true;
     for (int i = 0; i < minLength; ++i) {
         // TODO: Print line numbers
         if (output[i] != etalon[i]) {
             std::cout
                 << "< " << etalon[i] << "\n"
                 << "> " << output[i] << "\n";
-            return false;
+            etalonMatches = false;
+            break;
         }
     }
 
-    if (output.size() < etalon.size()) {
+    if (etalonMatches && output.size() < etalon.size()) {
         std::cout << "Unexpected end of file: " << outputFilePath << "\n";
-        return false;
+        etalonMatches = false;
     }
 
-    if (output.size() > etalon.size()) {
+    if (etalonMatches && output.size() > etalon.size()) {
         std::cout << "Unexpected end of file: " << etalonFilePath << "\n";
-        return false;
+        etalonMatches = false;
     }
 
-    return true;
+    const bool judgeMatches = checkJudge(testDirectory, tempDirectory, cppFiles, additionalOptions);
+    return etalonMatches && judgeMatches;
 }
 
 
