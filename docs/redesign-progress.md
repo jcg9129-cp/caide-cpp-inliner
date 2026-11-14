@@ -135,7 +135,7 @@ Tests: `repair-restores-function`, `repair-restores-type`,
 
 Result on the Mac (LLVM 22.1.8): builds cleanly, all 76 tests pass.
 
-## M8 — runtime verification on sample inputs (code applied, not yet built, 2026-11-14)
+## M8 — runtime verification on sample inputs (done, 2026-11-14)
 
 Codex wrote it, Opus reviewed. `CppInliner::verifyInputs`; CLI
 `--verify-run <file|dir of *.in>` (repeatable, needs `--verify-with`). After
@@ -147,7 +147,7 @@ stage-1/nondeterminism problem apart. Original not building → warn, skip.
 C interface unchanged. Tests: `verify-run-passes`,
 `verify-run-detects-difference` (force-removes a printing global).
 
-## M9 — quick fixes (code applied, not yet built, 2026-11-14)
+## M9 — quick fixes (done, 2026-11-14)
 
 Codex wrote it, Opus reviewed: C interface appends to the default
 `macrosToKeep`; `cmd` creates its temp dir; `inlineCode` returns
@@ -158,7 +158,7 @@ result (no more `-Wlogical-op` on Clang); detection trial parses are silent.
 test-tool marker `expectOutcome.txt` (added to five existing cases).
 
 
-## M10 — repair restores macros (code applied, not yet built, 2026-11-14)
+## M10 — repair restores macros (done, 2026-11-14)
 
 Codex wrote it, Opus reviewed. `RemoveInactivePreprocessorBlocks` gets
 `namesToRestore` (a restored macro's `#define`/`#undef` are never removed;
@@ -175,7 +175,7 @@ installs g++-16 as `g++`, and runs the whole suite with
 build with `-j${JOBS}` (default 4). `.dockerignore` keeps local build output
 out of the context. README: "Running the tests".
 
-## M4 — keep/remove report (code applied, not yet built, 2026-11-14)
+## M4 — keep/remove report (done, 2026-11-14)
 
 Codex wrote it, Opus reviewed. `CppInliner::reportFile`, CLI `--report <path>`
 (C interface unchanged). `src/Report.{h,cpp}`: header (outcome: optimized /
@@ -200,20 +200,21 @@ into the temp `inlined.cpp` (stage 1 doesn't keep `#line`). Zero cost without
 - M8 manual run failed only because the command lacked `-a` (no system
   include paths). Recheck.
 
+## Check results 2026-11-14, second run (Mac, LLVM 22.1.8)
+
+Detection fix ✔ (no `__float128` / `-Wlogical-op` lines), **79/79 tests
+pass** (covers M8, M9, M10, M4 and the fix). `cmd -a --verify-with
+--verify-run` exits 0, silent, `unused()` removed ✔. M8, M9, M10, M4 are done.
+Leftover noise: `cmd -a` still prints "2 errors generated." twice: Clang's
+own summary line from the failing GCC-16 detection trials (printed by
+CompilerInstance when caret diagnostics are on). To fix after M7:
+pass `-fno-caret-diagnostics` to the trial parses in `testOptions`.
+
 ## Pending checks for the user (run on the Mac, paste the output)
 
 Work continues without waiting for these; they're run whenever convenient.
 Remove an entry once its result is recorded above.
 
-1. **Detection fix + M8/M10/M4 suite** (commit "Fix option detection…"):
-   ```sh
-   make -C build -j4 test-tool cmd 2>&1 | grep -cE "Wlogical-op|__float128"; \
-   (cd build && ctest --output-on-failure 2>&1 | grep -E "Failed|tests passed" | head -20); \
-   build/cmd/cmd -std=c++17 -- -a -d tests/temp --verify-with "g++ -std=c++23" \
-     --verify-run tests/cases/verify-run-passes -o /tmp/m8-out.cpp tests/cases/verify-run-passes/1.cpp; \
-   echo "m8 exit=$?"; cat /tmp/m8-out.cpp
-   ```
-   Expect: `0`; 79/79 pass; `m8 exit=0`, nothing on stderr, `unused()` removed.
-2. **M12** (Docker, heavy; when the VM is idle):
+1. **M12** (Docker, heavy; when the VM is idle):
    `ci/docker-test.sh 2>&1 | tail -30` → last line
    `Linux tests passed (LLVM 22, g++ 16, JOBS=4).`
