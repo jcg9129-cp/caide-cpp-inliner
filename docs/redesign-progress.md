@@ -118,3 +118,19 @@ function now also runs the embedded check); CLI: `--verify-with "<cmd>"`,
 Result on the Mac (LLVM 22.1.8): all 72 tests pass. Manual `cmd` check:
 `--verify-with "g++ -std=c++23"` writes the optimized output silently;
 `--verify-with false` warns and writes the unoptimized output, exit 0.
+
+## M3b — repair loop (done, not committed, 2026-11-14)
+
+Codex wrote it, Opus reviewed. On a failed check, `inlineCode` reruns the
+optimizer on the same stage-1 file with `namesToRestore` (unqualified names →
+extra roots in `DependenciesCollector::VisitNamedDecl`), up to 3 repair rounds.
+Names = identifiers on candidate lines referenced by errors/notes (embedded
+notes now collected; judge `file:line:col` lines), skipping comments and
+literals, ∩ names of declarations the optimizer removed. No new name → stop and
+fall back as in M3a. Success after repair prints a note with the restored
+names. Macros are not restored. Test hook: `CAIDE_TESTING_FORCE_REMOVE`
+(test-tool marker `forceRemove.txt`; `expectStderr.txt` checks stderr).
+Tests: `repair-restores-function`, `repair-restores-type`,
+`repair-restores-overloads`, `repair-gives-up`.
+
+Result on the Mac (LLVM 22.1.8): builds cleanly, all 76 tests pass.

@@ -1,0 +1,3 @@
+caide inliner: warning: optimized output failed verification (judge compiler exited with code 1); writing unoptimized output
+caide inliner: warning: repair tried restoring: twice
+caide inliner: warning: unoptimized output also fails with the judge compiler

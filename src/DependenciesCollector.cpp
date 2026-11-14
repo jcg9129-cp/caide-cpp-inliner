@@ -316,10 +316,12 @@ bool DependenciesCollector::VisitAutoType(AutoType* autoType) {
 DependenciesCollector::DependenciesCollector(SourceManager& srcMgr,
         Sema& sema_,
         const std::unordered_set<std::string>& identifiersToKeep_,
+        const std::unordered_set<std::string>& namesToRestore_,
         SourceInfo& srcInfo_)
     : sourceManager(srcMgr)
     , sema(sema_)
     , identifiersToKeep(identifiersToKeep_)
+    , namesToRestore(namesToRestore_)
     , srcInfo(srcInfo_)
 {
 }
@@ -406,6 +408,10 @@ bool DependenciesCollector::VisitNamedDecl(clang::NamedDecl* decl) {
         return true;
 
     if (identifiersToKeep.count(decl->getQualifiedNameAsString()))
+        srcInfo.declsToKeep.insert(decl);
+
+    // Repair intentionally restores all overloads and all scopes by name.
+    if (decl->getDeclName().isIdentifier() && namesToRestore.count(decl->getNameAsString()))
         srcInfo.declsToKeep.insert(decl);
 
     return true;

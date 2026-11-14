@@ -50,6 +50,47 @@ static string pathConcat(const string& directory, const string& fileName) {
     return directory + "/" + fileName;
 }
 
+// Scope the optimizer's test hook to one inlineCode call, including exceptions.
+struct ForcedRemovalForTest {
+    explicit ForcedRemovalForTest(const string& testDirectory) {
+        string value;
+        for (const string& line : readNonEmptyLines(pathConcat(testDirectory, "forceRemove.txt"))) {
+            const auto begin = line.find_first_not_of(" \t\r");
+            const auto end = line.find_last_not_of(" \t\r");
+            if (!value.empty())
+                value += ',';
+            value += line.substr(begin, end - begin + 1);
+        }
+#ifdef _WIN32
+        const int status = _putenv_s("CAIDE_TESTING_FORCE_REMOVE", value.c_str());
+#else
+        const int status = value.empty() ? unsetenv("CAIDE_TESTING_FORCE_REMOVE") :
+            setenv("CAIDE_TESTING_FORCE_REMOVE", value.c_str(), 1);
+#endif
+        if (status != 0)
+            throw std::runtime_error("Could not set optimizer test hook");
+    }
+
+    ~ForcedRemovalForTest() {
+#ifdef _WIN32
+        _putenv_s("CAIDE_TESTING_FORCE_REMOVE", "");
+#else
+        unsetenv("CAIDE_TESTING_FORCE_REMOVE");
+#endif
+    }
+};
+
+// expectStderr.txt asserts diagnostic paths as well as the resulting etalon.
+struct CapturedStderrForTest {
+    std::ostringstream output;
+    std::streambuf* original = std::cerr.rdbuf(output.rdbuf());
+
+    ~CapturedStderrForTest() {
+        std::cerr.rdbuf(original);
+        std::cerr << output.str();
+    }
+};
+
 // Optionally check semantics independently of the etalon: compile the original
 // and inlined programs with CAIDE_TEST_CXX, then compare their outcomes/stdout.
 // Only per-test portable flags reach the judge; auto-detected Clang flags must
@@ -306,6 +347,20 @@ static bool runTest(const string& testDirectory, const string& tempDirectory, ca
     inliner.identifiersToKeep = readNonEmptyLines(pathConcat(testDirectory, "identifiersToKeep.txt"));
 
     const string outputFilePath = pathConcat(tempDirectory, "result.cpp");
+    const auto expectedStderr = readNonEmptyLines(pathConcat(testDirectory, "expectStderr.txt"));
+    const auto inlineCode = [&] {
+        const ForcedRemovalForTest forceRemove(testDirectory);
+        if (expectedStderr.empty()) {
+            inliner.inlineCode(cppFiles, outputFilePath);
+            return;
+        }
+        const CapturedStderrForTest diagnostics;
+        inliner.inlineCode(cppFiles, outputFilePath);
+        for (const string& expected : expectedStderr) {
+            if (diagnostics.output.str().find(expected) == string::npos)
+                throw std::runtime_error("Stderr missing expected substring: " + expected);
+        }
+    };
 
     // A test may assert that inlining FAILS GRACEFULLY on invalid input — i.e.
     // reports a compilation error (throws) rather than crashing — by including
@@ -318,7 +373,7 @@ static bool runTest(const string& testDirectory, const string& tempDirectory, ca
             const vector<string> requiredSubstrings =
                 readNonEmptyLines(pathConcat(testDirectory, "expectError.txt"));
             try {
-                inliner.inlineCode(cppFiles, outputFilePath);
+                inlineCode();
             } catch (const std::exception& e) {
                 const string what = e.what();
                 for (const string& sub : requiredSubstrings) {
@@ -336,7 +391,7 @@ static bool runTest(const string& testDirectory, const string& tempDirectory, ca
     }
 
     // Run
-    inliner.inlineCode(cppFiles, outputFilePath);
+    inlineCode();
 
     // Assert
     const string etalonFilePath = pathConcat(testDirectory, "etalon.cpp");

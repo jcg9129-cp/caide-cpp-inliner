@@ -26,7 +26,7 @@ public:
     void HandleDiagnostic(clang::DiagnosticsEngine::Level level,
                           const clang::Diagnostic& info) override {
         DiagnosticConsumer::HandleDiagnostic(level, info);
-        if (level >= clang::DiagnosticsEngine::Error) {
+        if (level >= clang::DiagnosticsEngine::Error || level == clang::DiagnosticsEngine::Note) {
             std::string message;
             VerificationDiagnostic diagnostic;
             if (info.hasSourceManager()) {
@@ -46,7 +46,10 @@ public:
             info.FormatDiagnostic(buffer);
             diagnostic.message.assign(buffer.data(), buffer.size());
             message += diagnostic.message;
-            errors.push_back(std::move(message));
+            // Notes supply repair locations (e.g. template instantiation sites),
+            // but must not change the optimizer's existing error messages.
+            if (level >= clang::DiagnosticsEngine::Error)
+                errors.push_back(std::move(message));
             diagnostics.push_back(std::move(diagnostic));
         }
     }

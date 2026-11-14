@@ -20,6 +20,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 
@@ -134,6 +135,18 @@ static string pathConcat(const string& path, const string& fileName) {
     return result;
 }
 
+static string formatNames(const std::unordered_set<string>& names) {
+    vector<string> sorted(names.begin(), names.end());
+    std::sort(sorted.begin(), sorted.end());
+    string result;
+    for (const string& name : sorted) {
+        if (!result.empty())
+            result += ", ";
+        result += name;
+    }
+    return result;
+}
+
 void CppInliner::inlineCode(const vector<string>& cppFilePaths, const string& outputFilePath) const {
     const string concatStage{pathConcat(temporaryDirectory, "concat.cpp")};
     const string inlinedStage{pathConcat(temporaryDirectory, "inlined.cpp")};
@@ -143,38 +156,64 @@ void CppInliner::inlineCode(const vector<string>& cppFilePaths, const string& ou
     internal::Inliner inliner{clangCompilationOptions};
     std::string inlinedCode{inliner.doInline(concatStage)};
     const string unoptimizedCode{removeInvalidDirectives(inlinedCode, inlinedStage)};
-    string code{unoptimizedCode};
+    const auto prepareOutput = [&](const string& text) {
+        return removeEmptyLines(removeComments ? internal::stripComments(text) : text,
+                                maxConsequentEmptyLines);
+    };
+    string code;
 
     if (removeUnusedCode) {
         internal::Optimizer optimizer{inliner.getResultingCommandLineOptions(), macrosToKeep, identifiersToKeep};
-        code = optimizer.doOptimize(inlinedStage);
-    }
+        std::unordered_set<string> namesToRestore;
+        internal::VerificationResult result;
+        const unsigned kMaxRepairRounds = 3;
+        for (unsigned round = 0; round <= kMaxRepairRounds; ++round) {
+            std::unordered_set<string> removedNames;
+            // Every attempt starts from the same stage-1 file. Restoration is
+            // through graph roots and their dependencies, never text edits.
+            code = prepareOutput(optimizer.doOptimize(inlinedStage, namesToRestore, removedNames));
+            if (!verifyOutput)
+                break;
 
-    if (removeComments)
-        code = internal::stripComments(code);
+            result = internal::verifyCode(code, inliner.getResultingCommandLineOptions(),
+                                          verifyCommand, temporaryDirectory);
+            if (result.passed) {
+                if (round > 0)
+                    std::cerr << "caide inliner: note: optimized output needed " << round
+                              << " repair round(s); restored: " << formatNames(namesToRestore) << '\n';
+                break;
+            }
+            if (round == kMaxRepairRounds)
+                break;
 
-    // Verify the exact text to be written, including comment and blank-line
-    // processing, so diagnostic locations remain useful to a future repair loop.
-    code = removeEmptyLines(code, maxConsequentEmptyLines);
-    if (removeUnusedCode && verifyOutput) {
-        const internal::VerificationResult result = internal::verifyCode(code,
-            inliner.getResultingCommandLineOptions(), verifyCommand, temporaryDirectory);
-        if (!result.passed) {
+            const auto found = internal::findRepairNames(code, result, removedNames);
+            bool added = false;
+            for (const string& name : found)
+                added = namesToRestore.insert(name).second || added;
+            if (!added)
+                break;
+        }
+
+        if (verifyOutput && !result.passed) {
             std::cerr << "caide inliner: warning: optimized output failed verification ("
                       << result.reason << "); writing unoptimized output\n";
+            if (!namesToRestore.empty())
+                std::cerr << "caide inliner: warning: repair tried restoring: "
+                          << formatNames(namesToRestore) << '\n';
             istringstream diagnostics(result.output);
             string line;
             for (unsigned i = 0; i < 20 && std::getline(diagnostics, line); ++i)
                 std::cerr << line << '\n';
 
-            code = removeComments ? internal::stripComments(unoptimizedCode) : unoptimizedCode;
-            code = removeEmptyLines(code, maxConsequentEmptyLines);
+            code = prepareOutput(unoptimizedCode);
             if (result.judgeFailed &&
                 !internal::verifyWithJudge(code, verifyCommand, temporaryDirectory).passed) {
                 std::cerr << "caide inliner: warning: unoptimized output also fails with the "
                              "judge compiler (a stage-1 or environment problem)\n";
             }
         }
+    } else {
+        code = prepareOutput(unoptimizedCode);
     }
 
     ofstream out{outputFilePath, std::ios::binary};

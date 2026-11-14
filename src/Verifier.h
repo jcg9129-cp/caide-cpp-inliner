@@ -7,6 +7,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace caide {
@@ -24,12 +25,15 @@ struct VerificationResult {
     bool judgeFailed = false;
     std::string reason;
     std::vector<VerificationDiagnostic> diagnostics;
+    // Canonical absolute path, resolved along with diagnostic paths before the
+    // temporary candidate is deleted (including macOS /var symlinks).
+    std::string candidatePath;
     // Rendered embedded errors or the judge's stdout/stderr, for reporting.
     std::string output;
 };
 
 // Check one candidate, without modifying it. Locations refer to this candidate
-// (or its system headers), so a future repair loop can use them before retrying.
+// (or its system headers), so repair can use them before retrying.
 // Temporary files are removed before returning, including on exceptions.
 VerificationResult verifyCode(const std::string& code,
     const std::vector<std::string>& compilationOptions,
@@ -41,6 +45,12 @@ VerificationResult verifyCode(const std::string& code,
 VerificationResult verifyWithJudge(const std::string& code,
     const std::vector<std::string>& judgeCommand,
     const std::string& temporaryDirectory);
+
+// Identifier names on candidate error/note lines that the optimizer removed.
+// Uses whole lines, ignoring columns, literals and comments.
+std::unordered_set<std::string> findRepairNames(const std::string& code,
+    const VerificationResult& result,
+    const std::unordered_set<std::string>& removedNames);
 
 } // namespace internal
 } // namespace caide

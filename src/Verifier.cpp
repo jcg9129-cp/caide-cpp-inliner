@@ -12,6 +12,9 @@
 #include <clang/Frontend/FrontendActions.h>
 #include <clang/Tooling/CompilationDatabase.h>
 #include <clang/Tooling/Tooling.h>
+#include <llvm/ADT/SmallString.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/Path.h>
 #include <llvm/Support/Program.h>
 
 #if CAIDE_CLANG_VERSION_AT_LEAST(16, 0)
@@ -32,6 +35,19 @@ using std::vector;
 namespace caide {
 namespace internal {
 namespace {
+
+string normalizePath(const string& file) {
+    if (file.empty())
+        return {};
+    llvm::SmallString<256> path(file);
+    if (llvm::sys::fs::make_absolute(path))
+        return file;
+    llvm::SmallString<256> realPath;
+    if (!llvm::sys::fs::real_path(path, realPath))
+        return realPath.str().str();
+    llvm::sys::path::remove_dots(path, true);
+    return path.str().str();
+}
 
 struct VerificationFiles {
     string candidate;
@@ -83,7 +99,7 @@ VerificationResult checkEmbedded(const VerificationFiles& files,
     const int status = tool.run(factory.get());
     VerificationResult result;
     result.diagnostics = errors.getDiagnostics();
-    result.passed = status == 0 && result.diagnostics.empty();
+    result.passed = status == 0 && errors.getErrors().empty();
     if (!result.passed) {
         result.reason = "embedded Clang check failed";
         for (const string& error : errors.getErrors())
@@ -184,6 +200,11 @@ VerificationResult verifyCode(const string& code, const vector<string>& compilat
     result = checkEmbedded(files, compilationOptions);
     if (result.passed && !judgeCommand.empty())
         result = checkJudge(files, judgeCommand);
+    // Resolve symlinks while the candidate still exists. The returned paths
+    // remain comparable after VerificationFiles removes the temporary files.
+    result.candidatePath = normalizePath(files.candidate);
+    for (auto& diagnostic : result.diagnostics)
+        diagnostic.file = normalizePath(diagnostic.file);
     return result;
 }
 
@@ -199,6 +220,84 @@ VerificationResult verifyWithJudge(const string& code, const vector<string>& jud
     if (!writeCandidate(code, files, result))
         return result;
     return checkJudge(files, judgeCommand);
+}
+
+std::unordered_set<string> findRepairNames(const string& code,
+        const VerificationResult& result, const std::unordered_set<string>& removedNames) {
+    std::unordered_set<unsigned> lines;
+    for (const auto& diagnostic : result.diagnostics) {
+        if (!result.candidatePath.empty() && diagnostic.file == result.candidatePath && diagnostic.line)
+            lines.insert(diagnostic.line);
+    }
+
+    std::unordered_set<string> found;
+    if (lines.empty() || removedNames.empty())
+        return found;
+
+    const auto isStart = [](char c) {
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_';
+    };
+    const auto isDigit = [](char c) { return c >= '0' && c <= '9'; };
+    unsigned line = 1;
+    std::size_t pos = 0;
+    const auto skipTo = [&](std::size_t end) {
+        if (end == string::npos)
+            end = code.size();
+        while (pos < end) {
+            if (code[pos++] == '\n')
+                ++line;
+        }
+    };
+
+    // Scan in source order so multiline comments and raw strings are skipped
+    // even when they start before a diagnostic line. Columns are never used.
+    while (pos < code.size()) {
+        if (code.compare(pos, 2, "//") == 0) {
+            skipTo(code.find('\n', pos));
+        } else if (code.compare(pos, 2, "/*") == 0) {
+            const auto end = code.find("*/", pos + 2);
+            skipTo(end == string::npos ? end : end + 2);
+        } else if (code[pos] == '"' || code[pos] == '\'') {
+            const char quote = code[pos];
+            std::size_t end = pos + 1;
+            while (end < code.size()) {
+                const char c = code[end++];
+                if (c == '\\' && end < code.size())
+                    ++end;
+                else if (c == quote)
+                    break;
+            }
+            skipTo(end);
+        } else if (isDigit(code[pos])) {
+            // In a number, an apostrophe is a digit separator, not a quote.
+            while (pos < code.size() && (isStart(code[pos]) || isDigit(code[pos]) ||
+                                        code[pos] == '\'' || code[pos] == '.'))
+                ++pos;
+        } else if (isStart(code[pos])) {
+            const auto begin = pos++;
+            while (pos < code.size() && (isStart(code[pos]) || isDigit(code[pos])))
+                ++pos;
+            const string name = code.substr(begin, pos - begin);
+            if (pos < code.size() && (code[pos] == '"' || code[pos] == '\'') &&
+                (name == "u8" || name == "u" || name == "U" || name == "L"))
+                continue; // The next iteration skips the prefixed literal.
+            if (pos < code.size() && code[pos] == '"' &&
+                (name == "R" || name == "u8R" || name == "uR" || name == "UR" || name == "LR")) {
+                const auto open = code.find('(', pos + 1);
+                if (open != string::npos && open - pos <= 17) {
+                    const string close = ")" + code.substr(pos + 1, open - pos - 1) + '"';
+                    const auto end = code.find(close, open + 1);
+                    skipTo(end == string::npos ? end : end + close.size());
+                    continue;
+                }
+            }
+            if (lines.count(line) && removedNames.count(name))
+                found.insert(name);
+        } else {
+            skipTo(pos + 1);
+        }
+    }
+    return found;
 }
 
 } // namespace internal

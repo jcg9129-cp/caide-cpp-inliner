@@ -38,6 +38,7 @@ public:
     DependenciesCollector(clang::SourceManager& srcMgr,
         clang::Sema& sema,
         const std::unordered_set<std::string>& identifiersToKeep,
+        const std::unordered_set<std::string>& namesToRestore,
         SourceInfo& srcInfo_);
 
     bool shouldVisitImplicitCode() const;
@@ -132,6 +133,7 @@ private:
     clang::SourceManager& sourceManager;
     clang::Sema& sema;
     const std::unordered_set<std::string>& identifiersToKeep;
+    const std::unordered_set<std::string>& namesToRestore;
     SourceInfo& srcInfo;
 
     // There is no getParentDecl(stmt) function, so we maintain the stack of Decls,
