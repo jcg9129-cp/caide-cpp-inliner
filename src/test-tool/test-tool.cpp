@@ -286,7 +286,11 @@ static bool runTest(const string& testDirectory, const string& tempDirectory, ca
     if (verbose && *verbose == '1')
         inliner.clangCompilationOptions.push_back("-v");
 
-    inliner.macrosToKeep = readNonEmptyLines(pathConcat(testDirectory, "macrosToKeep.txt"));
+    // Add to the library's default macrosToKeep (compiler/platform macros such as
+    // __clang__ and __GNUC__), the same way `cmd -k` does, so that tests see the
+    // behaviour users get.
+    for (string& macro : readNonEmptyLines(pathConcat(testDirectory, "macrosToKeep.txt")))
+        inliner.macrosToKeep.push_back(std::move(macro));
     inliner.identifiersToKeep = readNonEmptyLines(pathConcat(testDirectory, "identifiersToKeep.txt"));
 
     const string outputFilePath = pathConcat(tempDirectory, "result.cpp");

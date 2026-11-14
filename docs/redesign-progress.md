@@ -87,5 +87,16 @@ Result on the Mac (LLVM 22.1.8, judge g++-16): builds cleanly; only
 `global-side-effect-ctor` now pass. `inliner2` etalon updated: its used
 structs now keep their fields (`int a;` ×2, `T t;`), judge check passed.
 
-Open item (not in any milestone yet): keep `#if` blocks that test
-compiler-identification macros (`compiler-macro-branch`).
+## compiler-macro-branch — harness bug, not a cmd bug (2026-11-14)
+
+`cmd` already keeps both branches of `#ifdef __clang__`: the library's default
+`macrosToKeep` lists `__clang__`, `__GNUC__`, `_MSC_VER`, `_WIN32`,
+`__linux__`, `__APPLE__`, … and `cmd -k` appends to it. test-tool replaced
+the defaults with the test's `macrosToKeep.txt` (usually empty), so the M0
+"confirmation" of this case tested the harness, not the tool. Fixed:
+test-tool now appends, like `cmd`. Expected etalon change: `macros` keeps the
+`#if __cplusplus` block in `b()` (confirmed on the Mac, etalon updated; full suite
+passes). The C interface (`caideInliner.h`) still
+replaces the defaults; callers such as the caide app must pass them.
+Decision (user, 2026-11-14): `ONLINE_JUDGE` stays out of the default
+`macrosToKeep`; pass `-k ONLINE_JUDGE` when needed.

@@ -32,7 +32,7 @@ Problems, with evidence:
 | P3 | Fields are removed one by one. `sizeof`, layout, structured bindings and type traits depend on fields nobody names. **Confirmed 2026-11-14** (`tests/cases/field-layout-sizeof`). | `OptimizerVisitor.cpp` `VisitFieldDecl`; no `sizeof` handling in `DependenciesCollector` |
 | P4 | Unreferenced globals are removed even when their constructor or destructor has side effects (`Boot boot;`). This is deliberate; `/// caide keep` is the workaround. **Confirmed 2026-11-14** (`tests/cases/global-side-effect-ctor`). | comment in `OptimizerVisitor::VisitVarDecl` |
 | P5 | Removal logic is duplicated per declaration kind, and edits are raw source ranges | `OptimizerVisitor` Visit\* methods |
-| P6 | The preprocessing stage runs Clang's preprocessor. Blocks such as `#ifdef __clang__ … #else` may be resolved for Clang although the judge uses g++. **Confirmed 2026-11-14** (`tests/cases/compiler-macro-branch`). | `RemoveInactivePreprocessorBlocks.cpp` |
+| P6 | The preprocessing stage runs Clang's preprocessor. Blocks such as `#ifdef __clang__ … #else` may be resolved for Clang although the judge uses g++. **Not a bug in `cmd`** (corrected 2026-11-14): `__clang__`, `__GNUC__`, `_MSC_VER` etc. are in the default `macrosToKeep` (`caideInliner.cpp`), which `cmd -k` adds to. The M0 failure came from test-tool *replacing* the defaults; fixed there. The C interface also replaces them, so callers must pass the defaults. | `RemoveInactivePreprocessorBlocks.cpp` |
 | P7 | Clang version checks scattered through the code | `CAIDE_CLANG_VERSION_AT_LEAST` usages |
 
 Already handled correctly, kept as is: enums are kept whole

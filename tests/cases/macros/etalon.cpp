@@ -1,11 +1,18 @@
 #define MACRO_TO_KEEP
 
+
 int a() {
+
     return 2;
+
 }
 
 int b() {
+#if __cplusplus > 1
     return 1;
+#else
+    return 2;
+#endif
 }
 
 #define bar 1
@@ -20,3 +27,5 @@ int c() {
 int main() {
     return a() + b() + c();
 }
+
+
