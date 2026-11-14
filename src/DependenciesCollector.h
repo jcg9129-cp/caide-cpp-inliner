@@ -60,6 +60,7 @@ public:
 
     bool VisitType(clang::Type*);
     bool VisitTypedefType(clang::TypedefType*);
+    bool VisitDependentNameType(clang::DependentNameType*);
     bool VisitTemplateSpecializationType(clang::TemplateSpecializationType*);
 #if CAIDE_CLANG_VERSION_AT_LEAST(10,0)
     bool TraverseAutoType(clang::AutoType*
@@ -85,11 +86,13 @@ public:
     bool VisitValueDecl(clang::ValueDecl* valueDecl);
     bool VisitVarDecl(clang::VarDecl*);
     bool VisitMemberExpr(clang::MemberExpr* memberExpr);
+    bool VisitInitListExpr(clang::InitListExpr* initList);
     bool VisitLambdaExpr(clang::LambdaExpr* lambdaExpr);
     bool VisitFieldDecl(clang::FieldDecl* field);
     bool VisitTypeAliasDecl(clang::TypeAliasDecl* aliasDecl);
     bool VisitTypeAliasTemplateDecl(clang::TypeAliasTemplateDecl* aliasTemplateDecl);
     bool VisitClassTemplateDecl(clang::ClassTemplateDecl* templateDecl);
+    bool VisitVarTemplateDecl(clang::VarTemplateDecl* templateDecl);
     bool VisitClassTemplateSpecializationDecl(clang::ClassTemplateSpecializationDecl* specDecl);
     bool VisitVarTemplateSpecializationDecl(clang::VarTemplateSpecializationDecl* specDecl);
     bool TraverseClassTemplateSpecializationDecl(clang::ClassTemplateSpecializationDecl*);
@@ -113,6 +116,8 @@ private:
     clang::Decl* getParentDecl(clang::Decl* decl) const;
 
     void recordTemplateParameters(clang::TemplateDecl* templateDecl);
+    void linkClassTemplateMembers(clang::ClassTemplateDecl* templateDecl,
+        clang::DeclarationName name, clang::Decl* from);
 
     clang::Decl* getCorrespondingDeclInNonInstantiatedContext(clang::Decl* semanticDecl) const;
 

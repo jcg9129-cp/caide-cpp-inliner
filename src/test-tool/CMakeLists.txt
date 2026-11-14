@@ -14,7 +14,7 @@ add_custom_command(TARGET test-tool POST_BUILD
 # To run a specific test: ctest -R <test name>
 # For verbose output: ctest --verbose
 
-set(test_list actually-written-type alias-in-template-argument base-class-of-template base-initializers caide-concept-comment delayed-parsing error-undefined-type friends gcc-autodetect gcc-bits-stdc++ gcc-builtins gcc-int128 github-issue17 github-issue4 ident-to-keep include-option-std include-option-user inheriting-ctor inliner1 inliner2 inliner3 line-directives macros merge-namespaces merge-namespaces-2 merge-namespaces-nested merge-namespaces-nested-then-plain no-optimize pull-headers-up qualifiers references-from-template-arguments remove-comments remove-namespaces remove-template-functions remove-type-alias sizeof source-ranges static-assert static-assert-branch std-namespace stl strip-comments-all template-alias template-if-constexpr-member templated-context template-friend template-variables track-parent-decls ull unused-fields using-base-grandparent using-base-member-template using-declarations)
+set(test_list actually-written-type aggregate-init-fields alias-in-template-argument base-class-of-template base-initializers caide-concept-comment delayed-parsing error-undefined-type friends gcc-autodetect gcc-bits-stdc++ gcc-builtins gcc-int128 github-issue17 github-issue4 ident-to-keep include-option-std include-option-user inheriting-ctor inliner1 inliner2 inliner3 line-directives macros merge-namespaces merge-namespaces-2 merge-namespaces-nested merge-namespaces-nested-then-plain namespace-alias-dangling no-optimize pull-headers-up qualifiers references-from-template-arguments remove-comments remove-namespaces remove-template-functions remove-type-alias sizeof source-ranges static-assert static-assert-branch std-namespace stl strip-comments-all template-alias template-if-constexpr-member template-partial-spec-dependent templated-context template-friend template-variables track-parent-decls ull unused-fields using-base-grandparent using-base-member-template using-declarations)
 
 function(add_test_directory test_name)
     add_test(NAME ${test_name}
@@ -36,6 +36,7 @@ if(LLVM_PACKAGE_VERSION VERSION_GREATER_EQUAL "19")
     add_test_directory(github-issue8)
     add_test_directory(concepts-constraints)
     add_test_directory(concept-constrained-ctad)
+    add_test_directory(concept-ctor-requires)
     add_test_directory(error-undefined-concept)
 endif()
 

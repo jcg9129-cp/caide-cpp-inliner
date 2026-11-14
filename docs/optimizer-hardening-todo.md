@@ -24,6 +24,44 @@ Guaranteed-safe fallback for any file that trips a new instance: `-n`
   the class template it deduces.
 - **`using base::member;` on a dependent base** — `VisitUnresolvedUsingValueDecl` +
   `baseTemplatePattern` resolve the name against the base's pattern.
+- **Partial specialization selected only in a dependent context** — a used class
+  (or variable) template now keeps every partial specialization
+  (`VisitClassTemplateDecl` / `VisitVarTemplateDecl` via `getPartialSpecializations`).
+  Dropping one silently reverts to the primary (e.g. a `range_rank_v` read inside a
+  deduction-guide constraint). Test: `tests/cases/template-partial-spec-dependent`.
+- **`typename Tmpl<...>::member` member access (DependentNameType)** — resolved
+  against the template's primary pattern and every partial specialization
+  (`VisitDependentNameType` + `linkClassTemplateMembers`), so a nested member reached
+  only through a dependent alias (e.g. `using scalar = typename rank<R>::scalar;`)
+  is kept. Same test.
+- **`using base::x;` naming a grandparent dependent-base member** — transitive base
+  lookup + qualifier-type retention. Test: `tests/cases/using-base-grandparent`.
+- **Concept named only in a constructor template's requires-clause** — the base
+  RecursiveASTVisitor traverses a plain function/method template's requires-clause
+  (so its concept edge is recorded) but *not* a constructor template's, so the
+  concept was pruned while the surviving clause still named it (`undeclared
+  identifier` in the output). `VisitFunctionDecl` now walks a constructor template's
+  `getDescribedFunctionTemplate()->getTemplateParameters()->getRequiresClause()`
+  explicitly. Test: `tests/cases/concept-ctor-requires`. (Real trigger: atl
+  `static_trie(R&& words, Proj)` with `requires trie_word_range<R, Proj>`, CSES 1731.)
+- **Struct field written only by aggregate (braced) initialization** — `return {a,
+  b, c};` writes fields positionally with no `MemberExpr`, so a field never read by
+  name got no edge and was removed, leaving the surviving brace list unable to match
+  the shrunken struct (`could not convert brace-enclosed initializer list`).
+  `VisitInitListExpr` now depends on every field of an aggregate-initialized record
+  (the whole layout must be kept together). Test: `tests/cases/aggregate-init-fields`.
+  (Real trigger: atl `suffix_tree`'s `edge_ref{word, offset, length}` returned by
+  brace init but only `.length` read, Timus 1517.)
+- **Namespace alias to a pruned namespace** — `namespace geo = atl::geometry;` was
+  never removed (no `NamespaceAliasDecl` handling at all), but the optimizer prunes
+  the whole `atl::geometry` namespace when nothing uses its contents, leaving the
+  alias pointing at a name that no longer exists (`'geometry' is not a
+  namespace-name`). `OptimizerVisitor::VisitNamespaceAliasDecl` now removes the alias
+  exactly when its target namespace is unused — mirroring `VisitUsingDirectiveDecl`
+  (a `using namespace` of the same namespace is removed on the same condition). An
+  alias whose name is referenced keeps its target's members used, so it survives.
+  Test: `tests/cases/namespace-alias-dangling`. (Real trigger: a geometry program
+  with `namespace geo = atl::geometry;` where only `atl::io` is used.)
 - (earlier) nested-namespace merge corruption, `read_float`/`OverloadExpr`
   over-removal, `static_assert` in a braceless discarded branch, the invalid-brace
   crash.

@@ -363,6 +363,26 @@ bool OptimizerVisitor::VisitUsingDirectiveDecl(UsingDirectiveDecl* usingDecl) {
     return true;
 }
 
+bool OptimizerVisitor::VisitNamespaceAliasDecl(NamespaceAliasDecl* aliasDecl) {
+    if (!sourceManager.isInMainFile(getBeginLoc(aliasDecl)))
+        return true;
+    dbg(CAIDE_FUNC);
+
+    // A namespace alias (`namespace geo = atl::geometry;`) is otherwise never
+    // removed, but the namespace it targets can be: when all of that namespace's
+    // contents are pruned the namespace itself is deleted, and the surviving alias
+    // is then left pointing at a name that no longer exists ("'geometry' is not a
+    // namespace-name"). Drop the alias exactly when its target namespace is unused
+    // -- the same condition under which the namespace (and a `using namespace` of
+    // it) is removed. An alias whose name is referenced keeps its target's members
+    // used, so the target stays used and the alias is kept.
+    if (NamespaceDecl* ns = aliasDecl->getNamespace())
+        if (usedDeclarations.count(ns->getCanonicalDecl()) == 0)
+            removeDecl(aliasDecl);
+
+    return true;
+}
+
 bool OptimizerVisitor::VisitFriendDecl(clang::FriendDecl* friendDecl) {
     if (!sourceManager.isInMainFile(getBeginLoc(friendDecl)))
         return true;

@@ -50,6 +50,7 @@ public:
     bool VisitTypeAliasDecl(clang::TypeAliasDecl* aliasDecl);
     bool VisitTypeAliasTemplateDecl(clang::TypeAliasTemplateDecl* aliasDecl);
     bool VisitUsingDirectiveDecl(clang::UsingDirectiveDecl* usingDecl);
+    bool VisitNamespaceAliasDecl(clang::NamespaceAliasDecl* aliasDecl);
     bool VisitVarDecl(clang::VarDecl* varDecl);
     bool VisitVarTemplateDecl(clang::VarTemplateDecl*);
     bool VisitEnumDecl(clang::EnumDecl* enumDecl);

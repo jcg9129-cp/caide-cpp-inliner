@@ -252,6 +252,53 @@ bool DependenciesCollector::VisitTypedefType(TypedefType* typedefType) {
     return true;
 }
 
+void DependenciesCollector::linkClassTemplateMembers(ClassTemplateDecl* templateDecl,
+        DeclarationName name, Decl* from) {
+    auto linkIn = [&](CXXRecordDecl* record) {
+        if (!record || !record->hasDefinition())
+            return;
+        for (NamedDecl* decl : record->lookup(name)) {
+            insertReference(from, decl);
+            if (auto* memberTemplate = dyn_cast<TemplateDecl>(decl))
+                insertReference(from, memberTemplate->getTemplatedDecl());
+        }
+    };
+    linkIn(templateDecl->getTemplatedDecl());
+    llvm::SmallVector<ClassTemplatePartialSpecializationDecl*, 4> partials;
+    templateDecl->getPartialSpecializations(partials);
+    for (ClassTemplatePartialSpecializationDecl* partial : partials)
+        linkIn(partial);
+}
+
+// `typename Tmpl<...>::member` where the qualifier is a dependent class-template
+// specialization is a DependentNameType: it names no member decl (the specialization
+// is only chosen at instantiation, which we don't visit), so the member -- e.g. a
+// nested `using scalar = ...;` reached only through such an alias -- is otherwise
+// pruned while the alias that needs it stays. Resolve the name against the
+// template's primary pattern and every partial specialization.
+bool DependenciesCollector::VisitDependentNameType(DependentNameType* dependentName) {
+    const IdentifierInfo* identifier = dependentName->getIdentifier();
+    if (!identifier)
+        return true;
+#if CAIDE_CLANG_VERSION_AT_LEAST(22, 0)
+    NestedNameSpecifier qualifier = dependentName->getQualifier();
+    const Type* qualifierType =
+        qualifier.getKind() == NestedNameSpecifier::Kind::Type ? qualifier.getAsType() : nullptr;
+#else
+    NestedNameSpecifier* qualifier = dependentName->getQualifier();
+    const Type* qualifierType = qualifier ? qualifier->getAsType() : nullptr;
+#endif
+    if (!qualifierType)
+        return true;
+    const auto* specType = qualifierType->getAs<TemplateSpecializationType>();
+    if (!specType)
+        return true;
+    if (auto* templateDecl =
+            dyn_cast_or_null<ClassTemplateDecl>(specType->getTemplateName().getAsTemplateDecl()))
+        linkClassTemplateMembers(templateDecl, DeclarationName(identifier), getCurrentDecl());
+    return true;
+}
+
 bool DependenciesCollector::VisitTemplateSpecializationType(TemplateSpecializationType* tempSpecType) {
     TemplateName templateName = tempSpecType->getTemplateName();
     insertReference(getCurrentDecl(), templateName.getAsTemplateDecl());
@@ -533,6 +580,23 @@ bool DependenciesCollector::VisitMemberExpr(MemberExpr* memberExpr) {
     return true;
 }
 
+bool DependenciesCollector::VisitInitListExpr(InitListExpr* initList) {
+    // Aggregate (braced) initialization -- `return {a, b, c};` -- writes a
+    // record's fields positionally, producing no MemberExpr for each one. A field
+    // set only this way and never read by name would therefore get no incoming
+    // edge and be removed as unused; the surviving brace list then no longer
+    // matches the shrunken struct ("could not convert brace-enclosed initializer
+    // list"). Aggregate initialization also depends on the exact field layout
+    // (initializers bind to fields in declaration order), so a used aggregate must
+    // keep its whole struct: depend on every field of the initialized record.
+    if (const RecordDecl* record = initList->getType()->getAsRecordDecl()) {
+        Decl* currentDecl = getCurrentDecl();
+        for (FieldDecl* field : record->fields())
+            insertReference(currentDecl, field);
+    }
+    return true;
+}
+
 // A using declaration has an additional shadow declaration for each declaration
 // that it brings into scope.
 bool DependenciesCollector::VisitUsingShadowDecl(UsingShadowDecl* usingShadowDecl) {
@@ -652,6 +716,27 @@ bool DependenciesCollector::VisitTypeAliasTemplateDecl(TypeAliasTemplateDecl* al
 bool DependenciesCollector::VisitClassTemplateDecl(ClassTemplateDecl* templateDecl) {
     insertReference(templateDecl, templateDecl->getTemplatedDecl());
     recordTemplateParameters(templateDecl);
+
+    // A partial specialization is chosen only when the template is instantiated,
+    // which we don't visit, so nothing otherwise ties it to the primary. Keep every
+    // partial specialization of a used class template: any instantiation may select
+    // it, and dropping one silently changes which specialization wins (e.g. a
+    // `range_rank_v` used only inside a deduction-guide constraint then reads the
+    // primary's value instead of the partial specialization's).
+    llvm::SmallVector<ClassTemplatePartialSpecializationDecl*, 4> partials;
+    templateDecl->getPartialSpecializations(partials);
+    for (ClassTemplatePartialSpecializationDecl* partial : partials)
+        insertReference(templateDecl, partial);
+    return true;
+}
+
+bool DependenciesCollector::VisitVarTemplateDecl(VarTemplateDecl* templateDecl) {
+    // Same as class templates: keep every partial specialization of a used variable
+    // template, since the one selected is only decided at instantiation time.
+    llvm::SmallVector<VarTemplatePartialSpecializationDecl*, 4> partials;
+    templateDecl->getPartialSpecializations(partials);
+    for (VarTemplatePartialSpecializationDecl* partial : partials)
+        insertReference(templateDecl, partial);
     return true;
 }
 
@@ -722,6 +807,20 @@ bool DependenciesCollector::VisitFunctionDecl(FunctionDecl* f) {
 
     if (sourceManager.isInMainFile(getBeginLoc(f)) && f->isLateTemplateParsed())
         srcInfo.delayedParsedFunctions.push_back(f);
+
+    // The base visitor does not traverse the requires-clause on a constructor
+    // template's parameter list (a plain function or method template's is fine).
+    // A concept named only there produces no dependency edge, so the concept
+    // definition is pruned while the surviving requires-clause still references
+    // it -> the generated file fails to compile ("undeclared identifier"). Walk
+    // it explicitly here (f is the current decl, so VisitConceptSpecializationExpr
+    // records the edge from this constructor to the concept).
+    if (isa<CXXConstructorDecl>(f)) {
+        if (FunctionTemplateDecl* ctorTemplate = f->getDescribedFunctionTemplate())
+            if (TemplateParameterList* params = ctorTemplate->getTemplateParameters())
+                if (Expr* requiresClause = params->getRequiresClause())
+                    TraverseStmt(requiresClause);
+    }
 
     if (f->getTemplatedKind() == FunctionDecl::TK_FunctionTemplate) {
         // skip non-instantiated template function
