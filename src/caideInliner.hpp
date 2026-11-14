@@ -15,6 +15,13 @@
 
 namespace caide {
 
+/// \brief Outcome of a successful inlineCode call, after writing the output.
+enum class InlineOutcome {
+    Optimized,   ///< Optimized output was written, possibly after repair.
+    Unoptimized, ///< Unoptimized output was requested (removeUnusedCode was false).
+    FellBack     ///< Compile or runtime verification forced unoptimized output.
+};
+
 /// \brief C++ code inliner and unused code remover
 ///
 /// The C++ inliner transforms a program implemented as multiple C++ source files
@@ -40,12 +47,13 @@ public:
     /// \brief Generate a single-file C++ program equivalent to the multiple-file program.
     /// \param cppFilePaths full paths of all C++ files of a program
     /// \param outputFilePath path to a file where the inlined program will be written
+    /// \return Whether optimized, requested unoptimized, or fallback output was written.
     ///
     /// All input C++ files and included user headers will be combined into a single C++ file,
     /// and only code reachable from main function will be kept. In addition, declarations
     /// marked with a comment 'caide keep' will be kept too.
-    void inlineCode(const std::vector<std::string>& cppFilePaths,
-                    const std::string& outputFilePath) const;
+    InlineOutcome inlineCode(const std::vector<std::string>& cppFilePaths,
+                             const std::string& outputFilePath) const;
 
     /// \brief Try to detect system include paths automatically and adjust
     /// clangCompilationOptions accordingly.
@@ -89,6 +97,7 @@ public:
     /// from being removed.
     ///
     /// Default value is a list of common OS-specific and compiler-specific definitions.
+    /// Add callers' macros to these defaults, as cmd -k and the C interface do.
     ///
     /// \note The reference is checked by substring search. So, if this parameter
     /// contains a string "_WIN32" and a preprocessor condition is `#ifdef HAVE_WIN32`

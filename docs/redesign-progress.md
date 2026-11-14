@@ -147,6 +147,17 @@ stage-1/nondeterminism problem apart. Original not building → warn, skip.
 C interface unchanged. Tests: `verify-run-passes`,
 `verify-run-detects-difference` (force-removes a printing global).
 
+## M9 — quick fixes (code applied, not yet built, 2026-11-14)
+
+Codex wrote it, Opus reviewed: C interface appends to the default
+`macrosToKeep`; `cmd` creates its temp dir; `inlineCode` returns
+`InlineOutcome` (`Optimized` / `Unoptimized` / `FellBack`), `cmd --strict`
+exits 3 on `FellBack`, `caideInlineCppCodeVerified` returns 3 (the old C
+function still returns 0); CMake checks each compiler flag with its own cached
+result (no more `-Wlogical-op` on Clang); detection trial parses are silent.
+test-tool marker `expectOutcome.txt` (added to five existing cases).
+
+
 ## Pending checks for the user (run on the Mac, paste the output)
 
 Work continues without waiting for these; they're run whenever convenient.
@@ -161,3 +172,17 @@ Remove an entry once its result is recorded above.
    echo "cmd exit=$?"; cat /tmp/m8-out.cpp
    ```
    Expect: 78/78 pass; cmd prints nothing on stderr; `unused()` removed.
+
+2. **M9** (commit "Quick fixes…"): reconfigure so the flag checks rerun, then test.
+   ```sh
+   rm -rf build && cmake -S src -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release \
+     -DCAIDE_USE_SYSTEM_CLANG=ON -DClang_ROOT=/opt/homebrew/opt/llvm@22 \
+     -DCAIDE_TEST_CXX="g++ -std=c++23" && \
+   make -C build -j4 test-tool cmd 2>&1 | grep -cE "Wlogical-op|__float128"; \
+   (cd build && ctest --output-on-failure 2>&1 | grep -E "Failed|tests passed|Unexpected inline outcome" | head -20); \
+   rm -rf /tmp/caide-m9 && build/cmd/cmd -std=c++17 -- -d /tmp/caide-m9 --strict --verify-with false \
+     -o /tmp/m9-out.cpp tests/cases/sizeof/1.cpp; echo "cmd exit=$?"
+   ```
+   Expect: the count line prints `0` (no `-Wlogical-op` or `__float128` noise);
+   all tests pass; cmd creates `/tmp/caide-m9`, warns about the fallback, and
+   exits `3`.

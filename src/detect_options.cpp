@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
+#include <iostream>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -87,7 +88,12 @@ bool testOptions(const vector<string>& compilationOptions, const string& cppFile
 
     vector<string> sources{cppFile};
     DetectOptionsFrontendActionFactory factory;
+    IgnoringDiagConsumer diagnostics;
     clang::tooling::ClangTool tool(*compilationDatabase, sources);
+    tool.setDiagnosticConsumer(&diagnostics);
+#if CAIDE_CLANG_VERSION_AT_LEAST(9, 0)
+    tool.setPrintErrorMessage(false);
+#endif
     return tool.run(&factory) == 0;
 }
 
@@ -161,6 +167,7 @@ vector<string> detectClangOptions(const string& temporaryDirectory) {
             return compilationOptions;
     }
 
+    std::cerr << "caide inliner: auto-detection failed; using Clang's default search paths\n";
     return {}; // let clang determine the options automatically
 }
 

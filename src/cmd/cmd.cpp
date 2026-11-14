@@ -49,6 +49,7 @@ static void printUsage(std::ostream& os, const char* prog) {
         "  --verify-run <path>  Compare runs on an input file, or sorted .in files in a\n"
         "                       directory (no recursion; repeatable; requires --verify-with)\n"
         "  --no-verify        Disable output verification and fallback\n"
+        "  --strict           Exit with code 3 after writing output if verification falls back\n"
         "  -h, --help         Show this help and exit\n"
         "\n"
         "Remaining arguments after '--' are treated as input source files.\n";
@@ -110,6 +111,7 @@ int main(int argc, const char* argv[]) {
     bool noOptimize = false;
     bool stripComments = false;
     bool verifyOutput = true;
+    bool strict = false;
     vector<string> verifyCommand;
     vector<string> verifyRunPaths;
 
@@ -186,6 +188,8 @@ int main(int argc, const char* argv[]) {
             verifyRunPaths.emplace_back(requireArg(i, flag));
         } else if (flag == "--no-verify") {
             verifyOutput = false;
+        } else if (flag == "--strict") {
+            strict = true;
         } else {
             sourceFiles.emplace_back(argv[i]);
         }
@@ -203,6 +207,9 @@ int main(int argc, const char* argv[]) {
     }
 
     try {
+        const auto error = llvm::sys::fs::create_directories(tmpDirectory);
+        if (error)
+            throw runtime_error("cannot create temporary directory " + tmpDirectory + ": " + error.message());
         caide::CppInliner inliner(tmpDirectory);
         inliner.verifyInputs = verificationInputs(verifyRunPaths);
 
@@ -225,7 +232,9 @@ int main(int argc, const char* argv[]) {
         inliner.removeComments = stripComments;
         inliner.verifyOutput = verifyOutput;
         inliner.verifyCommand = verifyCommand;
-        inliner.inlineCode(sourceFiles, outputFile);
+        const auto outcome = inliner.inlineCode(sourceFiles, outputFile);
+        if (strict && outcome == caide::InlineOutcome::FellBack)
+            return 3;
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << "\n";
         return 1;

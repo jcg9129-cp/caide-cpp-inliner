@@ -362,18 +362,18 @@ static bool runTest(const string& testDirectory, const string& tempDirectory, ca
 
     const string outputFilePath = pathConcat(tempDirectory, "result.cpp");
     const auto expectedStderr = readNonEmptyLines(pathConcat(testDirectory, "expectStderr.txt"));
-    const auto inlineCode = [&] {
+    const auto inlineCode = [&]() -> caide::InlineOutcome {
         const ForcedRemovalForTest forceRemove(testDirectory);
         if (expectedStderr.empty()) {
-            inliner.inlineCode(cppFiles, outputFilePath);
-            return;
+            return inliner.inlineCode(cppFiles, outputFilePath);
         }
         const CapturedStderrForTest diagnostics;
-        inliner.inlineCode(cppFiles, outputFilePath);
+        const auto outcome = inliner.inlineCode(cppFiles, outputFilePath);
         for (const string& expected : expectedStderr) {
             if (diagnostics.output.str().find(expected) == string::npos)
                 throw std::runtime_error("Stderr missing expected substring: " + expected);
         }
+        return outcome;
     };
 
     // A test may assert that inlining FAILS GRACEFULLY on invalid input — i.e.
@@ -405,9 +405,17 @@ static bool runTest(const string& testDirectory, const string& tempDirectory, ca
     }
 
     // Run
-    inlineCode();
+    const auto outcome = inlineCode();
 
     // Assert
+    const auto expectedOutcome = readNonEmptyLines(pathConcat(testDirectory, "expectOutcome.txt"));
+    if (!expectedOutcome.empty()) {
+        const string actualOutcome = outcome == caide::InlineOutcome::Optimized ? "Optimized" :
+            outcome == caide::InlineOutcome::Unoptimized ? "Unoptimized" : "FellBack";
+        if (expectedOutcome.size() != 1 || expectedOutcome[0] != actualOutcome)
+            throw std::runtime_error("Unexpected inline outcome: " + actualOutcome);
+    }
+
     const string etalonFilePath = pathConcat(testDirectory, "etalon.cpp");
     const vector<string> output = readNonEmptyLines(outputFilePath);
     const vector<string> etalon = readNonEmptyLines(etalonFilePath);
