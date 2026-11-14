@@ -11,6 +11,7 @@
 #include "inliner.h"
 #include "optimizer.h"
 #include "util.h"
+#include "Verifier.h"
 
 #include <algorithm>
 #include <iostream>
@@ -51,6 +52,8 @@ CppInliner::CppInliner(const string& temporaryDirectory_)
     , maxConsequentEmptyLines{2}
     , removeUnusedCode{true}
     , removeComments{false}
+    , verifyOutput{true}
+    , verifyCommand{}
     , temporaryDirectory{trimEndPathSeparators(temporaryDirectory_)}
 {
 }
@@ -100,14 +103,13 @@ static bool isWhitespaceOnly(const string& text) {
     return text.find_first_not_of(" \t\r") == string::npos;
 }
 
-static void removeEmptyLines(const string& textInBinaryMode,
-                             int maxConsequentEmptyLines,
-                             const string& outputFilePath)
+static string removeEmptyLines(const string& textInBinaryMode,
+                               int maxConsequentEmptyLines)
 {
     if (maxConsequentEmptyLines < 0)
         maxConsequentEmptyLines = std::numeric_limits<int>::max();
     istringstream in{textInBinaryMode};
-    ofstream out{outputFilePath, std::ios::binary};
+    std::ostringstream out;
     int currentConsequentEmptyLines = 0;
     bool readNonEmptyLine = false;
     string line;
@@ -122,6 +124,7 @@ static void removeEmptyLines(const string& textInBinaryMode,
         if (readNonEmptyLine && currentConsequentEmptyLines <= maxConsequentEmptyLines)
             out << line << '\n';
     }
+    return out.str();
 }
 
 static string pathConcat(const string& path, const string& fileName) {
@@ -139,7 +142,8 @@ void CppInliner::inlineCode(const vector<string>& cppFilePaths, const string& ou
 
     internal::Inliner inliner{clangCompilationOptions};
     std::string inlinedCode{inliner.doInline(concatStage)};
-    std::string code{removeInvalidDirectives(inlinedCode, inlinedStage)};
+    const string unoptimizedCode{removeInvalidDirectives(inlinedCode, inlinedStage)};
+    string code{unoptimizedCode};
 
     if (removeUnusedCode) {
         internal::Optimizer optimizer{inliner.getResultingCommandLineOptions(), macrosToKeep, identifiersToKeep};
@@ -149,7 +153,32 @@ void CppInliner::inlineCode(const vector<string>& cppFilePaths, const string& ou
     if (removeComments)
         code = internal::stripComments(code);
 
-    removeEmptyLines(code, maxConsequentEmptyLines, outputFilePath);
+    // Verify the exact text to be written, including comment and blank-line
+    // processing, so diagnostic locations remain useful to a future repair loop.
+    code = removeEmptyLines(code, maxConsequentEmptyLines);
+    if (removeUnusedCode && verifyOutput) {
+        const internal::VerificationResult result = internal::verifyCode(code,
+            inliner.getResultingCommandLineOptions(), verifyCommand, temporaryDirectory);
+        if (!result.passed) {
+            std::cerr << "caide inliner: warning: optimized output failed verification ("
+                      << result.reason << "); writing unoptimized output\n";
+            istringstream diagnostics(result.output);
+            string line;
+            for (unsigned i = 0; i < 20 && std::getline(diagnostics, line); ++i)
+                std::cerr << line << '\n';
+
+            code = removeComments ? internal::stripComments(unoptimizedCode) : unoptimizedCode;
+            code = removeEmptyLines(code, maxConsequentEmptyLines);
+            if (result.judgeFailed &&
+                !internal::verifyWithJudge(code, verifyCommand, temporaryDirectory).passed) {
+                std::cerr << "caide inliner: warning: unoptimized output also fails with the "
+                             "judge compiler (a stage-1 or environment problem)\n";
+            }
+        }
+    }
+
+    ofstream out{outputFilePath, std::ios::binary};
+    out << code;
 }
 
 void CppInliner::autoDetectCompilationOptions() {
@@ -171,6 +200,17 @@ extern "C" int caideInlineCppCode(
         int numCppFiles,
         const char* outputFilePath)
 {
+    return caideInlineCppCodeVerified(options, nullptr, 0, cppFilePaths, numCppFiles, outputFilePath);
+}
+
+extern "C" int caideInlineCppCodeVerified(
+        const CaideCppInlinerOptions* options,
+        const char** verifyCommand,
+        int numVerifyArgs,
+        const char** cppFilePaths,
+        int numCppFiles,
+        const char* outputFilePath)
+{
     try {
         caide::CppInliner inliner(options->temporaryDirectory);
         inliner.clangCompilationOptions = arrayToCppVector(
@@ -178,6 +218,8 @@ extern "C" int caideInlineCppCode(
         inliner.macrosToKeep = arrayToCppVector(options->macrosToKeep, options->numMacrosToKeep);
         inliner.identifiersToKeep = arrayToCppVector(options->identifiersToKeep, options->numIdentifiersToKeep);
         inliner.maxConsequentEmptyLines = options->maxConsequentEmptyLines;
+        inliner.verifyOutput = true;
+        inliner.verifyCommand = arrayToCppVector(verifyCommand, numVerifyArgs);
         vector<string> files = arrayToCppVector(cppFilePaths, numCppFiles);
         inliner.inlineCode(files, outputFilePath);
         return 0;

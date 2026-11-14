@@ -286,6 +286,18 @@ static bool runTest(const string& testDirectory, const string& tempDirectory, ca
     if (verbose && *verbose == '1')
         inliner.clangCompilationOptions.push_back("-v");
 
+    // This exercises inlineCode's verification independently of CAIDE_TEST_CXX,
+    // which checks the resulting output only after inlineCode has returned.
+    inliner.verifyCommand = readNonEmptyLines(pathConcat(testDirectory, "verifyCommand.txt"));
+    for (string& arg : inliner.verifyCommand) {
+        const string marker = "TEST_ROOT";
+        std::size_t pos = 0;
+        while ((pos = arg.find(marker, pos)) != string::npos) {
+            arg.replace(pos, marker.size(), testDirectory);
+            pos += testDirectory.size();
+        }
+    }
+
     // Add to the library's default macrosToKeep (compiler/platform macros such as
     // __clang__ and __GNUC__), the same way `cmd -k` does, so that tests see the
     // behaviour users get.

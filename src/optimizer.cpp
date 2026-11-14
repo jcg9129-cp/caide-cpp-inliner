@@ -6,6 +6,7 @@
 
 #include "optimizer.h"
 #include "DependenciesCollector.h"
+#include "ErrorCollector.h"
 #include "MergeNamespacesVisitor.h"
 #include "OptimizerVisitor.h"
 #include "RemoveInactivePreprocessorBlocks.h"
@@ -292,37 +293,6 @@ public:
         return new OptimizerFrontendAction(result, macrosToKeep, identifiersToKeep);
     }
 #endif
-};
-
-// Like clang::TextDiagnosticBuffer, but resolves source locations eagerly and
-// adds them to error messages.
-class ErrorCollector: public DiagnosticConsumer {
-public:
-    void HandleDiagnostic(DiagnosticsEngine::Level DiagLevel, const Diagnostic& Info) override {
-        // Default implementation (Warnings/errors count).
-        DiagnosticConsumer::HandleDiagnostic(DiagLevel, Info);
-        if (DiagLevel >= DiagnosticsEngine::Level::Error) {
-            string message;
-            if (Info.hasSourceManager()) {
-                message = Info.getLocation().printToString(Info.getSourceManager());
-                message += ": ";
-            }
-            llvm::SmallVector<char, 256> buffer;
-            Info.FormatDiagnostic(buffer);
-            message += string(buffer.data(), buffer.size());
-            errors.push_back(std::move(message));
-        }
-    }
-
-    void clear() override {
-        DiagnosticConsumer::clear();
-        errors.clear();
-    }
-
-    const vector<string>& getErrors() const { return errors; }
-
-private:
-    vector<string> errors;
 };
 
 Optimizer::Optimizer(const vector<string>& cmdLineOptions_,

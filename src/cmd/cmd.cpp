@@ -6,6 +6,11 @@
 
 #include "../caideInliner.hpp"
 
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Allocator.h>
+#include <llvm/Support/CommandLine.h>
+#include <llvm/Support/StringSaver.h>
+
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -37,6 +42,9 @@ static void printUsage(std::ostream& os, const char* prog) {
         "  -a, --auto-detect  Auto-detect system include paths before applying clang options\n"
         "  -n, --no-optimize  Only inline into a single file; do not remove unreachable code\n"
         "  -c, --strip-comments  Remove all comments from the output\n"
+        "  --verify-with <command>  Also compile and link with a quoted judge command\n"
+        "                           (e.g. \"g++ -std=c++23 -O2\") after the embedded check\n"
+        "  --no-verify        Disable output verification and fallback\n"
         "  -h, --help         Show this help and exit\n"
         "\n"
         "Remaining arguments after '--' are treated as input source files.\n";
@@ -66,6 +74,8 @@ int main(int argc, const char* argv[]) {
     bool autoDetect = false;
     bool noOptimize = false;
     bool stripComments = false;
+    bool verifyOutput = true;
+    vector<string> verifyCommand;
 
     const string clangOptionsEnd = "--";
     const string directoryFlag = "-d";
@@ -125,6 +135,19 @@ int main(int argc, const char* argv[]) {
             noOptimize = true;
         } else if (stripCommentsFlag == flag || stripCommentsFlagLong == flag) {
             stripComments = true;
+        } else if (flag == "--verify-with") {
+            const char* command = requireArg(i, flag);
+            llvm::BumpPtrAllocator allocator;
+            llvm::StringSaver saver(allocator);
+            llvm::SmallVector<const char*, 16> args;
+            llvm::cl::TokenizeGNUCommandLine(command, saver, args);
+            if (args.empty()) {
+                std::cerr << "Error: --verify-with requires a non-empty command\n";
+                return 1;
+            }
+            verifyCommand.assign(args.begin(), args.end());
+        } else if (flag == "--no-verify") {
+            verifyOutput = false;
         } else {
             sourceFiles.emplace_back(argv[i]);
         }
@@ -156,6 +179,8 @@ int main(int argc, const char* argv[]) {
         inliner.maxConsequentEmptyLines = maxConsecutiveEmptyLines;
         inliner.removeUnusedCode = !noOptimize;
         inliner.removeComments = stripComments;
+        inliner.verifyOutput = verifyOutput;
+        inliner.verifyCommand = verifyCommand;
         inliner.inlineCode(sourceFiles, outputFile);
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << "\n";

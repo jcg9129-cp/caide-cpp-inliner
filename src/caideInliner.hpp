@@ -136,6 +136,24 @@ public:
     /// Default value is false.
     bool removeComments;
 
+    /// \brief Whether to verify optimized output and fall back on failure.
+    ///
+    /// The embedded Clang checks the final output with the optimizer's options.
+    /// If verification fails, the unoptimized inlined program is written instead
+    /// and a warning is printed. Used only when removeUnusedCode is true.
+    ///
+    /// Default value is true.
+    bool verifyOutput;
+
+    /// \brief Optional judge compiler command for output verification.
+    ///
+    /// After the embedded check passes, compile and link with this command,
+    /// for example {"g++", "-std=c++23", "-O2"}. The candidate source path and
+    /// -o executable path are appended. Used only when verifyOutput is true.
+    ///
+    /// Default value is empty (embedded Clang check only).
+    std::vector<std::string> verifyCommand;
+
 private:
     const std::string temporaryDirectory;
 };

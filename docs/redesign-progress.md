@@ -100,3 +100,21 @@ passes). The C interface (`caideInliner.h`) still
 replaces the defaults; callers such as the caide app must pass them.
 Decision (user, 2026-11-14): `ONLINE_JUDGE` stays out of the default
 `macrosToKeep`; pass `-k ONLINE_JUDGE` when needed.
+
+## M3a — verification + fallback (done, not committed, 2026-11-14)
+
+Codex wrote it, Opus reviewed. `src/Verifier.{h,cpp}`, `src/ErrorCollector.h`
+(moved out of optimizer.cpp). After optimizing, `inlineCode` checks the final
+text with the embedded Clang (syntax-only, optimizer's options) and, if
+`verifyCommand` is set, compiles+links it with the judge (60 s). On failure it
+writes the unoptimized stage-1 text and warns on stderr. API:
+`CppInliner::verifyOutput` (default true), `CppInliner::verifyCommand`;
+C: new `caideInlineCppCodeVerified` (old struct/function unchanged; the old
+function now also runs the embedded check); CLI: `--verify-with "<cmd>"`,
+`--no-verify`. Tests: `verify-fallback-judge-fails`,
+`verify-fallback-judge-missing` (test-tool reads `verifyCommand.txt`).
+`VerificationResult.diagnostics` carries file:line:col for M3b's repair loop.
+
+Result on the Mac (LLVM 22.1.8): all 72 tests pass. Manual `cmd` check:
+`--verify-with "g++ -std=c++23"` writes the optimized output silently;
+`--verify-with false` warns and writes the unoptimized output, exit 0.

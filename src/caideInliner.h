@@ -39,6 +39,19 @@ int caideInlineCppCode(
         int numCppFiles,
         const char* outputFilePath);
 
+/*! Inline with embedded verification and an optional judge compiler command.
+    verifyCommand contains numVerifyArgs argv entries; source and output paths
+    are appended by the library. Pass zero arguments for embedded checking only.
+    Return codes are the same as caideInlineCppCode.
+*/
+int caideInlineCppCodeVerified(
+        const struct CaideCppInlinerOptions* options,
+        const char** verifyCommand,
+        int numVerifyArgs,
+        const char** cppFilePaths,
+        int numCppFiles,
+        const char* outputFilePath);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
