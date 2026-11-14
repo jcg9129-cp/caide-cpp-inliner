@@ -201,10 +201,10 @@ Each one is independently useful and shippable.
 | M4 | Keep/remove/restore reason report | diagnosability |
 | M10 | Restore removed `#define` macros in repair | repair gap |
 | M11 | ~~Remove unused system `#include`s~~ — deferred, see §7 item 5 | output size |
-| M12 | Linux/Docker CI with `CAIDE_TEST_CXX`; real-code corpus (atl + solutions) | test gap |
+| M12 | Linux/Docker CI with `CAIDE_TEST_CXX` (part 1 done); real-code corpus (part 2, deferred: §7 item 7) | test gap |
 | M5 | Unit-based editing engine | P5 |
 | M6 | Finer semantic checks, one at a time (§4.5) | silent miscompiles |
-| M7 | Bounded Clang range + compat layer | P7 |
+| M7 | Bounded Clang range (minimum 21, §7 item 6) + compat layer | P7 |
 | — | Measure speed before optimizing it (verification doubles parsing; repair reruns the optimizer) | — |
 | — | macOS: option detection with Homebrew GCC (`__float128`) | only for native macOS use |
 
@@ -255,6 +255,14 @@ Decided 2026-11-14:
    (`--prune-includes`), allowed only together with `--verify-with` and
    `--verify-run`, based on Clang's include-cleaner analysis rather than
    trial removal, and verified like any other removal.
+
+6. **Supported Clang/LLVM (M7):** minimum **21** (2026-11-14). The user asked
+   for "recent but stable"; 21 is the version the bundled `src/llvm-project`
+   submodule build is pinned to (`CAIDE_USE_SYSTEM_CLANG=OFF`), so a higher
+   minimum would break it. Tested: 22 (Docker, Mac `llvm@22`) and 23 (Mac
+   Homebrew `llvm`). Raise the minimum together with the submodule.
+7. **Real-code corpus (M12 part 2): deferred** by the user (2026-11-14); revisit
+   if needed. Suite-only testing until then.
 
 ## 8. Rejected
 
